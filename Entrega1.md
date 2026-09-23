@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| **Equipo** | [Nombre del equipo] |
-| **Integrantes** | [Nombre 1], [Nombre 2], [Nombre 3], [Nombre 4] |
+| **Equipo** | 6 |
+| **Integrantes** | Kevvin Estiben Hernandez jaramillo, Jasmin Camila Gutierrez Maya, Luz Amanda Galeano Ceballos|
 | **Fecha de entrega** | 28 de septiembre de 2026 |
-| **Repositorio** | [enlace al repo de GitHub] |
+| **Repositorio** | https://github.com/lugaleanoc/gestion-inventarios-isw2.git |
 
 ---
 
@@ -37,8 +37,6 @@
 
 ## 2. Investigación de sistemas similares
 
-> Mínimo 3 sistemas de gestión de inventarios existentes (comerciales, open source o corporativos).
-
 ### 2.1 Sistemas analizados
 
 #### Sistema 1: [nombre]
@@ -67,7 +65,6 @@
 | Criterio | Sistema 1 | Sistema 2 | Sistema 3 |
 |---|---|---|---|
 | Gestión de productos | | | |
-| Control de stock multi-bodega | | | |
 | Órdenes de compra | | | |
 | Alertas de stock | | | |
 | Reportes / dashboard | | | |
@@ -178,9 +175,9 @@
 
 | Proyecto | Sistema de Gestión de Inventarios – [Nombre de la empresa] |
 |---|---|
-| **Equipo / Integrantes** | [Nombres completos] |
+| **Equipo / Integrantes** | Kevvin Estiben Hernandez jaramillo, Jasmin Camila Gutierrez Maya, Luz Amanda Galeano Ceballos |
 | **Entrega N.°** | 1 |
-| **Periodo cubierto** | [fecha inicial] – [fecha final] |
+| **Periodo cubierto** | 28 de septiembre – 12 de diciembre |
 
 | Fecha | Integrante | Herramienta de IA | Tarea / actividad apoyada | Prompt utilizado (resumen) | Nivel de intervención humana | Resultado / aprendizaje |
 |---|---|---|---|---|---|---|
