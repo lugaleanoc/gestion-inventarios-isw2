@@ -53,28 +53,38 @@
 - **Fortalezas:**
 - **Debilidades:**
 
-#### Sistema 3: [nombre]
-- **Tipo:**
+#### Sistema 3: Oracle SCM Cloud
+- **Tipo:** Corporativo / Empresarial
 - **Funcionalidades principales:**
-- **Arquitectura (si es identificable):**
+  - Seguimiento del ciclo completo de suministros y reabastecimiento en múltiples bodegas.
+  - Automatización de pedidos de compra basados en demanda y niveles mínimos de inventario.
+  - Auditoría y trazabilidad detallada de la mercancía (números de lote y fechas de vencimiento).
+  - Consolidación de métricas e indicadores operativos para la toma de decisiones directivas.
+- **Arquitectura (si es identificable):** Arquitectura orientada a servicios (SOA) en la nube corporativa de Oracle.
 - **Fortalezas:**
+  - Alta capacidad para gestionar grandes volúmenes de datos y múltiples ubicaciones en tiempo real.
+  - Estándares estrictos de seguridad, auditoría y control financiero a nivel empresarial.
+  - Integración directa con otros sistemas de finanzas, ventas y logística.
 - **Debilidades:**
+  - Costos de implementación y licencias muy elevados.
+  - Proceso de configuración inicial extenso y dependiente de personal especializado.
+  - Curva de aprendizaje compleja para los usuarios finales.
 
 ### 2.2 Cuadro comparativo
 
-| Criterio | Sistema 1 | Sistema 2 | Sistema 3 |
+| Criterio | Sistema 1 (Código Abierto) | Sistema 2 (Comercial) | Sistema 3 (Corporativo - Oracle SCM) |
 |---|---|---|---|
-| Gestión de productos | | | |
-| Órdenes de compra | | | |
-| Alertas de stock | | | |
-| Reportes / dashboard | | | |
-| Arquitectura identificada | | | |
-| Experiencia de usuario | | | |
+| **Gestión de productos** | [Completar con tu compañero] | [Completar con tu compañero] | Control avanzado por variantes, lotes, números de serie y estado del producto. |
+| **Órdenes de compra** | [Completar con tu compañero] | [Completar con tu compañero] | Generación automática basada en proyecciones de consumo y stock mínimo. |
+| **Alertas de stock** | [Completar con tu compañero] | [Completar con tu compañero] | Notificaciones automáticas por desabastecimiento o riesgo de sobrecosto. |
+| **Reportes / dashboard** | [Completar con tu compañero] | [Completar con tu compañero] | Paneles analíticos empresariales con indicadores de gestión en tiempo real. |
+| **Arquitectura identificada** | [Completar con tu compañero] | [Completar con tu compañero] | Servicios en la nube distribuida (Cloud SOA). |
+| **Experiencia de usuario** | [Completar con tu compañero] | [Completar con tu compañero] | Funcional y estructurada para procesos corporativos, requiere capacitación previa. |
 
 ### 2.3 Conclusiones
 
 > Qué aprendieron de esta investigación y cómo alimenta el alcance de su propio sistema.
-
+El análisis del sistema corporativo (Oracle SCM) nos permite entender cómo las grandes empresas aseguran la trazabilidad de sus productos y evitan pérdidas mediante la automatización. Aunque su costo y complejidad exceden las necesidades de una PYME, esta investigación nos da las bases para diseñar un sistema propio que tome sus mejores prácticas (alertas automáticas y auditoría de inventario), pero implementado en una arquitectura de microservicios más liviana, ágil y económica.
 ---
 
 ## 3. Definición del problema y alcance
