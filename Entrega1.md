@@ -39,22 +39,22 @@
 
 ### 2.1 Sistemas analizados
 
-#### Sistema 1: [nombre]
-- **Tipo:** (comercial / open source / corporativo)
-- **Funcionalidades principales:**
-- **Arquitectura (si es identificable):**
-- **Fortalezas:**
-- **Debilidades:**
+#### Sistema 1: [Alegra]
+- **Tipo:** Comercial
+- **Funcionalidades principales:** Alegra es un sistema de punto de venta en la nube pensado principalmente para pequeños y medianos negocios en Colombia. Permite manejar el inventario en varias bodegas a la vez, controlando en tiempo real las entradas y salidas de stock, y facilita crear productos o servicios de forma rápida. También incluye facturación electrónica conectada directamente con la DIAN, manejo de vendedores, integración con pasarelas de pago y reportes en tiempo real para tomar decisiones sobre precios o reabastecimiento. Todo esto se sincroniza automáticamente entre las ventas del punto de venta y la parte contable, así que no toca registrar nada por aparte.
+- **Arquitectura (si es identificable):** Es un SaaS cerrado, no es identificable.
+- **Fortalezas:** Lo más fuerte de Alegra es que ya viene integrado con la facturación electrónica exigida en Colombia, algo que otros sistemas no traen de fábrica y que toca configurar aparte. También es bastante accesible porque el POS viene incluido desde el plan gratuito, y al ser una herramienta en la nube se puede usar desde cualquier dispositivo sin instalar nada. El manejo de múltiples bodegas en tiempo real también es un punto a favor para negocios que no operan en un solo local.
+- **Debilidades:** El problema es que Alegra no nació como un sistema de inventario, sino como una herramienta de contabilidad y facturación a la que le fueron agregando el POS y el inventario como un módulo más. Entonces las funciones de inventario son más básicas comparadas con un sistema que se enfoque solo en eso.
 
 #### Sistema 2: [nombre]
-- **Tipo:**
+- **Tipo:** Open source
 - **Funcionalidades principales:**
 - **Arquitectura (si es identificable):**
 - **Fortalezas:**
 - **Debilidades:**
 
 #### Sistema 3: [nombre]
-- **Tipo:**
+- **Tipo:** Corporativo
 - **Funcionalidades principales:**
 - **Arquitectura (si es identificable):**
 - **Fortalezas:**
@@ -64,12 +64,12 @@
 
 | Criterio | Sistema 1 | Sistema 2 | Sistema 3 |
 |---|---|---|---|
-| Gestión de productos | | | |
-| Órdenes de compra | | | |
-| Alertas de stock | | | |
-| Reportes / dashboard | | | |
-| Arquitectura identificada | | | |
-| Experiencia de usuario | | | |
+| Gestión de productos |Permite crear productos inventariables (con control de costos y cantidades) o no inventariables (para servicios), y ajustar el inventario manualmente cuando sea necesario.| | |
+| Órdenes de compra |Permite generarlas en pocos minutos y enviarlas directo a los proveedores, además de manejar una base de contactos de proveedores y las facturas de compra asociadas.| | |
+| Alertas de stock |No tiene alertas de stock.| | |
+| Reportes / dashboard |Trae varios reportes automáticos: ventas por producto (para ver cuáles se mueven más), reporte de vendedores (para comisiones), y reporte de valor de inventario en tiempo real.| | |
+| Arquitectura identificada |No se ha identificado.| | |
+| Experiencia de usuario |Al ser 100% en la nube, funciona desde cualquier dispositivo sin instalar nada, y el POS permite facturar rápido incluso sin conexión a internet. Tiene soporte técnico 24/7.| | |
 
 ### 2.3 Conclusiones
 
