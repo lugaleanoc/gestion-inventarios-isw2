@@ -1,0 +1,710 @@
+openapi: 3.0.3
+info:
+  title: JAK Inventory — Microservicio de Configuración
+  version: 1.0.0
+  description: |
+    Permite que cada empresa adapte reglas, alertas y el dashboard (RF26, RF27, RF28),
+    con parámetros independientes por empresa (RNF19).
+
+    **Dueño del catálogo de empresas y locales (decisión 1):** los demás servicios solo
+    guardan `empresaId` y `localId`; si necesitan el detalle, lo consultan aquí.
+
+    **Identificación de la empresa:** del JWT (vía Gateway) o de `X-Empresa-Id` (llamadas internas).
+
+    **Quién lo consulta:**
+    - **Gateway** (interno): crea empresas nuevas.
+    - **Inventario** (interno): stock mínimo y alertas activas.
+    - **Reposición** (interno): stock mínimo vigente.
+    - **Reportes** (interno): métricas elegidas para el dashboard.
+
+    Este servicio no llama a ningún otro.
+
+    **Roles:** `administrador` modifica la configuración (RF29). Los demás roles solo consultan.
+
+    **Eliminación (decisión 8):** los locales se dan de baja lógica.
+servers:
+- url: http://localhost:8080
+  description: A través del API Gateway
+- url: http://configuracion-service:8000
+  description: Dirección interna en la red de Docker (ajustar puerto)
+tags:
+- name: Empresas
+  description: Datos de la empresa
+- name: Locales
+  description: Locales de la empresa
+- name: Reglas
+  description: Stock mínimo y alertas
+- name: Dashboard
+  description: Métricas y preferencias de visualización
+- name: Salud
+  description: Estado del servicio
+paths:
+  /api/configuracion/empresas:
+    post:
+      tags:
+      - Empresas
+      summary: Crear una empresa (ruta interna, la llama el Gateway)
+      description: |
+        Ruta interna (decisión 7): no pasa por el Gateway como ruta pública.
+        Solo acepta `X-Servicio-Origen: gateway`. No lleva `X-Empresa-Id` porque la empresa aún no existe.
+      operationId: crearEmpresa
+      security:
+      - servicioOrigen: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - nombre
+              - nit
+              properties:
+                nombre:
+                  type: string
+                  example: Papelería La Estrella
+                nit:
+                  type: string
+                  example: 900123456-7
+      responses:
+        '201':
+          description: Empresa creada con configuración por defecto
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empresa'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '409':
+          description: Ya existe una empresa con ese NIT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/configuracion/empresa:
+    get:
+      tags:
+      - Empresas
+      summary: Consultar la empresa actual
+      description: La empresa se toma del JWT o de `X-Empresa-Id`.
+      operationId: consultarEmpresa
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      responses:
+        '200':
+          description: Empresa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empresa'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+    put:
+      tags:
+      - Empresas
+      summary: Actualizar datos generales de la empresa
+      description: 'Rol: `administrador`.'
+      operationId: actualizarEmpresa
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nombre:
+                  type: string
+                stockMinimoPorDefecto:
+                  type: integer
+                  minimum: 0
+                  description: Se usa para productos sin stock mínimo propio
+      responses:
+        '200':
+          description: Empresa actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empresa'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+  /api/configuracion/locales:
+    get:
+      tags:
+      - Locales
+      summary: Listar los locales de la empresa
+      operationId: listarLocales
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      parameters:
+      - name: activo
+        in: query
+        schema:
+          type: boolean
+          default: true
+      responses:
+        '200':
+          description: Locales
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Local'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+    post:
+      tags:
+      - Locales
+      summary: Crear un local
+      description: 'Rol: `administrador`.'
+      operationId: crearLocal
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocalNuevo'
+      responses:
+        '201':
+          description: Local creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Local'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+  /api/configuracion/locales/{localId}:
+    parameters:
+    - name: localId
+      in: path
+      required: true
+      schema:
+        type: integer
+    get:
+      tags:
+      - Locales
+      summary: Consultar un local
+      operationId: consultarLocal
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      responses:
+        '200':
+          description: Local
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Local'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    put:
+      tags:
+      - Locales
+      summary: Actualizar un local
+      description: 'Rol: `administrador`.'
+      operationId: actualizarLocal
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocalNuevo'
+      responses:
+        '200':
+          description: Local actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Local'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    delete:
+      tags:
+      - Locales
+      summary: Dar de baja un local (baja lógica)
+      description: 'Rol: `administrador`. Queda `activo = false`; sus ventas y balances se conservan.'
+      operationId: darBajaLocal
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Local dado de baja
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Local'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+  /api/configuracion/stock-minimo:
+    get:
+      tags:
+      - Reglas
+      summary: Listar los stocks mínimos definidos por producto
+      operationId: listarStockMinimo
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      responses:
+        '200':
+          description: Productos con stock mínimo propio
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StockMinimo'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+  /api/configuracion/stock-minimo/{productoId}:
+    parameters:
+    - name: productoId
+      in: path
+      required: true
+      schema:
+        type: integer
+      example: 105
+    get:
+      tags:
+      - Reglas
+      summary: Consultar el stock mínimo vigente de un producto
+      description: |
+        Lo consultan Inventario y Reposición. Si el producto no tiene valor propio se
+        devuelve el `stockMinimoPorDefecto` de la empresa con `origen = por_defecto`.
+        El valor aplica al total del producto (suma de todas las bodegas, decisión 4).
+      operationId: consultarStockMinimo
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      responses:
+        '200':
+          description: Stock mínimo vigente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMinimo'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+    put:
+      tags:
+      - Reglas
+      summary: Definir el stock mínimo de un producto (RF26)
+      description: 'Rol: `administrador`.'
+      operationId: definirStockMinimo
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - stockMinimo
+              properties:
+                stockMinimo:
+                  type: integer
+                  minimum: 0
+                  example: 10
+      responses:
+        '200':
+          description: Stock mínimo guardado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMinimo'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+  /api/configuracion/alertas:
+    get:
+      tags:
+      - Reglas
+      summary: Consultar qué alertas están activas
+      operationId: consultarAlertas
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      responses:
+        '200':
+          description: Estado de cada alerta
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigAlertas'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+    put:
+      tags:
+      - Reglas
+      summary: Activar o desactivar alertas de forma independiente (RF27)
+      description: 'Rol: `administrador`. Las alertas se muestran en el panel web, no hay correo (decisión 9).'
+      operationId: configurarAlertas
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigAlertas'
+      responses:
+        '200':
+          description: Alertas actualizadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigAlertas'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+  /api/configuracion/dashboard:
+    get:
+      tags:
+      - Dashboard
+      summary: Consultar las métricas y preferencias del dashboard
+      description: Lo consulta Reportes para saber qué construir para esta empresa.
+      operationId: consultarDashboard
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      responses:
+        '200':
+          description: Configuración del dashboard
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigDashboard'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+    put:
+      tags:
+      - Dashboard
+      summary: Elegir métricas y preferencias del dashboard (RF28)
+      description: 'Rol: `administrador`.'
+      operationId: configurarDashboard
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigDashboard'
+      responses:
+        '200':
+          description: Dashboard actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigDashboard'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+  /health:
+    get:
+      tags:
+      - Salud
+      summary: Estado del servicio
+      description: Lo consulta el Service Discovery (y Docker) para saber si el servicio está vivo. No requiere autenticación.
+      operationId: salud
+      security: []
+      responses:
+        '200':
+          description: Servicio funcionando
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Salud'
+              example:
+                servicio: configuracion
+                estado: ok
+components:
+  schemas:
+    Error:
+      type: object
+      required:
+      - error
+      - detalle
+      properties:
+        error:
+          type: string
+          description: Código del error en mayúsculas
+          example: DATOS_INVALIDOS
+        detalle:
+          type: string
+          example: Falta un campo obligatorio
+    Paginacion:
+      type: object
+      properties:
+        pagina:
+          type: integer
+          example: 1
+        porPagina:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 57
+    Salud:
+      type: object
+      properties:
+        servicio:
+          type: string
+        estado:
+          type: string
+          example: ok
+    Empresa:
+      type: object
+      properties:
+        empresaId:
+          type: integer
+          example: 4
+        nombre:
+          type: string
+          example: Papelería La Estrella
+        nit:
+          type: string
+          example: 900123456-7
+        stockMinimoPorDefecto:
+          type: integer
+          example: 5
+        activa:
+          type: boolean
+          example: true
+        fechaCreacion:
+          type: string
+          format: date-time
+    LocalNuevo:
+      type: object
+      required:
+      - nombre
+      properties:
+        nombre:
+          type: string
+          example: Sede Centro
+        direccion:
+          type: string
+          example: 'Cra 23 # 25-10'
+        ciudad:
+          type: string
+          example: Manizales
+    Local:
+      type: object
+      properties:
+        localId:
+          type: integer
+          example: 1
+        empresaId:
+          type: integer
+          readOnly: true
+          example: 4
+        nombre:
+          type: string
+          example: Sede Centro
+        direccion:
+          type: string
+        ciudad:
+          type: string
+        activo:
+          type: boolean
+          example: true
+    StockMinimo:
+      type: object
+      properties:
+        productoId:
+          type: integer
+          example: 105
+        stockMinimo:
+          type: integer
+          example: 10
+        origen:
+          type: string
+          enum:
+          - producto
+          - por_defecto
+          description: '`producto` si tiene valor propio; `por_defecto` si se usa el de la empresa'
+    ConfigAlertas:
+      type: object
+      properties:
+        stockMinimo:
+          type: boolean
+          description: Avisar cuando un producto llega al stock mínimo (RF09)
+          example: true
+        productoAgotado:
+          type: boolean
+          example: true
+        reposicionPendiente:
+          type: boolean
+          description: Avisar cuando hay solicitudes de reposición por aprobar
+          example: false
+    Metrica:
+      type: string
+      enum:
+      - ventas_por_canal
+      - productos_baja_rotacion
+      - productos_agotados
+      - estado_reposiciones
+      - balance_diario
+      - ingresos_egresos
+      - valor_inventario
+    ConfigDashboard:
+      type: object
+      properties:
+        metricas:
+          type: array
+          items:
+            $ref: '#/components/schemas/Metrica'
+          example:
+          - ventas_por_canal
+          - productos_agotados
+          - balance_diario
+        preferencias:
+          type: object
+          properties:
+            localPorDefecto:
+              type: integer
+              nullable: true
+              description: null = todos los locales
+            periodoPorDefecto:
+              type: string
+              enum:
+              - hoy
+              - semana
+              - mes
+              example: semana
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token emitido por el API Gateway. Contiene `empresaId`, `usuarioId` y `rol`.
+    servicioOrigen:
+      type: apiKey
+      in: header
+      name: X-Servicio-Origen
+      description: Nombre del microservicio que llama. Solo red interna de Docker (el Gateway no enruta estas llamadas).
+    empresaInterna:
+      type: apiKey
+      in: header
+      name: X-Empresa-Id
+      description: Empresa en nombre de la cual se hace la llamada interna.
+  parameters:
+    Pagina:
+      name: pagina
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PorPagina:
+      name: porPagina
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    FechaDesde:
+      name: fechaDesde
+      in: query
+      schema:
+        type: string
+        format: date
+      example: '2026-10-01'
+    FechaHasta:
+      name: fechaHasta
+      in: query
+      schema:
+        type: string
+        format: date
+      example: '2026-10-31'
+    LocalIdFiltro:
+      name: localId
+      in: query
+      description: Filtra por local
+      schema:
+        type: integer
+      example: 1
+  responses:
+    DatosInvalidos:
+      description: Los datos enviados no son válidos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NoAutenticado:
+      description: Falta el token (o los headers internos) o no es válido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    SinPermiso:
+      description: El rol (o el servicio de origen) no permite esta operación
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NoEncontrado:
+      description: El recurso no existe o pertenece a otra empresa
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflicto:
+      description: La operación choca con el estado actual de los datos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServicioNoDisponible:
+      description: Un servicio del que depende no respondió después de 3 intentos (circuit breaker)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

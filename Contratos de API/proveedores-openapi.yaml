@@ -1,0 +1,518 @@
+openapi: 3.0.3
+info:
+  title: JAK Inventory — Microservicio de Proveedores
+  version: 1.0.0
+  description: |
+    Administra los proveedores de la empresa, sus datos de contacto y condiciones,
+    y qué productos surte cada uno (RF03).
+
+    **Quién lo llama:**
+    - **Reposición** (interno): `GET /api/proveedores/por-producto/{productoId}` para saber a quién pedir (decisión 6, RF20).
+    - **Inventario** (interno): `GET /api/proveedores/{proveedorId}` para validar que un proveedor exista (decisión 6).
+    - **Usuarios** (vía Gateway): administración de proveedores.
+
+    Este servicio no llama a ningún otro. No valida que el `productoId` exista en
+    Inventario, para no crear una dependencia circular; esa validación la hace el panel web.
+
+    **Roles:** `administrador` y `encargado_bodega` administran; `vendedor` solo consulta.
+
+    **Eliminación (decisión 8):** proveedores y asociaciones se dan de baja lógica.
+servers:
+- url: http://localhost:8080
+  description: A través del API Gateway
+- url: http://proveedores-service:8000
+  description: Dirección interna en la red de Docker (ajustar puerto)
+tags:
+- name: Proveedores
+  description: Datos de los proveedores
+- name: Productos del proveedor
+  description: Qué productos surte cada proveedor
+- name: Salud
+  description: Estado del servicio
+paths:
+  /api/proveedores:
+    get:
+      tags:
+      - Proveedores
+      summary: Listar y buscar proveedores
+      operationId: listarProveedores
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      parameters:
+      - name: q
+        in: query
+        description: Buscar por nombre o NIT
+        schema:
+          type: string
+      - name: activo
+        in: query
+        schema:
+          type: boolean
+          default: true
+      - $ref: '#/components/parameters/Pagina'
+      - $ref: '#/components/parameters/PorPagina'
+      responses:
+        '200':
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  datos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Proveedor'
+                  paginacion:
+                    $ref: '#/components/schemas/Paginacion'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+    post:
+      tags:
+      - Proveedores
+      summary: Registrar un proveedor
+      description: 'Roles: `administrador`, `encargado_bodega`.'
+      operationId: crearProveedor
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProveedorNuevo'
+      responses:
+        '201':
+          description: Proveedor registrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proveedor'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '409':
+          description: Ya existe un proveedor con ese NIT en la empresa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/proveedores/{proveedorId}:
+    parameters:
+    - $ref: '#/components/parameters/ProveedorId'
+    get:
+      tags:
+      - Proveedores
+      summary: Consultar un proveedor (Inventario lo usa para validar que exista)
+      description: Un proveedor dado de baja responde 200 con `activo = false`.
+      operationId: consultarProveedor
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      responses:
+        '200':
+          description: Proveedor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proveedor'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    put:
+      tags:
+      - Proveedores
+      summary: Actualizar un proveedor
+      description: 'Roles: `administrador`, `encargado_bodega`.'
+      operationId: actualizarProveedor
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProveedorNuevo'
+      responses:
+        '200':
+          description: Proveedor actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proveedor'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    delete:
+      tags:
+      - Proveedores
+      summary: Dar de baja un proveedor (baja lógica)
+      description: 'Rol: `administrador`.'
+      operationId: darBajaProveedor
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Proveedor dado de baja
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proveedor'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+  /api/proveedores/{proveedorId}/productos:
+    parameters:
+    - $ref: '#/components/parameters/ProveedorId'
+    get:
+      tags:
+      - Productos del proveedor
+      summary: Productos que surte un proveedor
+      operationId: listarProductosProveedor
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      responses:
+        '200':
+          description: Asociaciones activas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Asociacion'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    post:
+      tags:
+      - Productos del proveedor
+      summary: Asociar un producto al proveedor
+      description: |
+        Roles: `administrador`, `encargado_bodega`.
+        Si `principal = true`, este proveedor pasa a ser el principal del producto
+        (el que usa Reposición) y el anterior deja de serlo.
+      operationId: asociarProducto
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - productoId
+              properties:
+                productoId:
+                  type: integer
+                  example: 105
+                principal:
+                  type: boolean
+                  default: false
+                precioCompra:
+                  type: number
+                  example: 8000
+      responses:
+        '201':
+          description: Asociación creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asociacion'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          description: El producto ya está asociado a este proveedor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/proveedores/{proveedorId}/productos/{productoId}:
+    delete:
+      tags:
+      - Productos del proveedor
+      summary: Quitar la asociación (baja lógica)
+      description: 'Roles: `administrador`, `encargado_bodega`.'
+      operationId: desasociarProducto
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/ProveedorId'
+      - name: productoId
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Asociación dada de baja
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asociacion'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+  /api/proveedores/por-producto/{productoId}:
+    get:
+      tags:
+      - Productos del proveedor
+      summary: Proveedores de un producto (lo usa Reposición)
+      description: |
+        Devuelve los proveedores activos del producto; el primero de la lista es el
+        `principal`. Responde 404 si el producto no tiene ningún proveedor.
+      operationId: proveedoresDeProducto
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      parameters:
+      - name: productoId
+        in: path
+        required: true
+        schema:
+          type: integer
+        example: 105
+      responses:
+        '200':
+          description: Proveedores del producto
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  allOf:
+                  - $ref: '#/components/schemas/Proveedor'
+                  - type: object
+                    properties:
+                      principal:
+                        type: boolean
+                      precioCompra:
+                        type: number
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+  /health:
+    get:
+      tags:
+      - Salud
+      summary: Estado del servicio
+      description: Lo consulta el Service Discovery (y Docker) para saber si el servicio está vivo. No requiere autenticación.
+      operationId: salud
+      security: []
+      responses:
+        '200':
+          description: Servicio funcionando
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Salud'
+              example:
+                servicio: proveedores
+                estado: ok
+components:
+  parameters:
+    Pagina:
+      name: pagina
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PorPagina:
+      name: porPagina
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    FechaDesde:
+      name: fechaDesde
+      in: query
+      schema:
+        type: string
+        format: date
+      example: '2026-10-01'
+    FechaHasta:
+      name: fechaHasta
+      in: query
+      schema:
+        type: string
+        format: date
+      example: '2026-10-31'
+    LocalIdFiltro:
+      name: localId
+      in: query
+      description: Filtra por local
+      schema:
+        type: integer
+      example: 1
+    ProveedorId:
+      name: proveedorId
+      in: path
+      required: true
+      schema:
+        type: integer
+      example: 9
+  schemas:
+    Error:
+      type: object
+      required:
+      - error
+      - detalle
+      properties:
+        error:
+          type: string
+          description: Código del error en mayúsculas
+          example: DATOS_INVALIDOS
+        detalle:
+          type: string
+          example: Falta un campo obligatorio
+    Paginacion:
+      type: object
+      properties:
+        pagina:
+          type: integer
+          example: 1
+        porPagina:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 57
+    Salud:
+      type: object
+      properties:
+        servicio:
+          type: string
+        estado:
+          type: string
+          example: ok
+    ProveedorNuevo:
+      type: object
+      required:
+      - nombre
+      - nit
+      properties:
+        nombre:
+          type: string
+          example: Distribuidora Andina S.A.S.
+        nit:
+          type: string
+          example: 800987654-1
+        contacto:
+          type: object
+          properties:
+            nombre:
+              type: string
+              example: Carlos Ríos
+            telefono:
+              type: string
+              example: '3001234567'
+            correo:
+              type: string
+              format: email
+        condiciones:
+          type: object
+          properties:
+            plazoEntregaDias:
+              type: integer
+              example: 5
+            formaPago:
+              type: string
+              example: Crédito 30 días
+            pedidoMinimo:
+              type: number
+              example: 200000
+    Proveedor:
+      allOf:
+      - $ref: '#/components/schemas/ProveedorNuevo'
+      - type: object
+        properties:
+          proveedorId:
+            type: integer
+            example: 9
+          empresaId:
+            type: integer
+            readOnly: true
+          activo:
+            type: boolean
+    Asociacion:
+      type: object
+      properties:
+        proveedorId:
+          type: integer
+        productoId:
+          type: integer
+        principal:
+          type: boolean
+        precioCompra:
+          type: number
+        activo:
+          type: boolean
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token emitido por el API Gateway. Contiene `empresaId`, `usuarioId` y `rol`.
+    servicioOrigen:
+      type: apiKey
+      in: header
+      name: X-Servicio-Origen
+      description: Nombre del microservicio que llama. Solo red interna de Docker (el Gateway no enruta estas llamadas).
+    empresaInterna:
+      type: apiKey
+      in: header
+      name: X-Empresa-Id
+      description: Empresa en nombre de la cual se hace la llamada interna.
+  responses:
+    DatosInvalidos:
+      description: Los datos enviados no son válidos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NoAutenticado:
+      description: Falta el token (o los headers internos) o no es válido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    SinPermiso:
+      description: El rol (o el servicio de origen) no permite esta operación
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NoEncontrado:
+      description: El recurso no existe o pertenece a otra empresa
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflicto:
+      description: La operación choca con el estado actual de los datos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServicioNoDisponible:
+      description: Un servicio del que depende no respondió después de 3 intentos (circuit breaker)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

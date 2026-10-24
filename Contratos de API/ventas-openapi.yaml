@@ -1,0 +1,601 @@
+openapi: 3.0.3
+info:
+  title: JAK Inventory — Microservicio de Ventas
+  version: 1.1.0
+  description: |
+    Registra las ventas realizadas en los locales físicos y en la tienda web,
+    con su canal y su medio de pago (RF15, RF16).
+
+    **Identificación de la empresa (RNF19):** la empresa nunca llega por la URL.
+    - Peticiones externas (vía API Gateway): se toma `empresaId`, `usuarioId` y `rol` del token JWT.
+    - Peticiones internas (servicio a servicio, sin pasar por el Gateway): se toma de los
+      headers `X-Servicio-Origen` y `X-Empresa-Id`.
+
+    Todas las consultas se filtran automáticamente por `empresaId`: una empresa nunca
+    ve las ventas de otra. `empresaId` y `localId` pertenecen a Configuración; este
+    servicio solo guarda sus identificadores.
+
+    **Llamadas que hace este servicio (REST interno, con circuit breaker y hasta 3 reintentos — RF30):**
+    - **Inventario** `POST /api/inventario/stock/descuentos`: descuenta el stock de todos
+      los ítems de la venta en una sola llamada, "todo o nada" (RF17). Envía `ventaId`,
+      y por cada ítem `productoId`, `bodegaId` y `cantidad`. El `ventaId` evita que un
+      reintento descuente dos veces. Si Inventario rechaza o no responde, la venta queda
+      `rechazada` y no se registra ingreso.
+    - **Inventario** `GET /api/inventario/bodegas?localId=...`: solo si la petición no trae `bodegaId`,
+      para elegir la bodega del local.
+    - **Balance Diario** `POST /api/balance/movimientos/ventas`: registra el ingreso de la venta.
+      Si Balance no responde, la venta SÍ queda confirmada con `estadoBalance = pendiente`
+      y el fallo queda en el log. Un administrador puede reintentarlo con
+      `POST /api/ventas/{ventaId}/reintento-balance`.
+
+    **Roles (del JWT):**
+    - `administrador`: todas las operaciones.
+    - `vendedor`: registrar y consultar ventas.
+    - `tienda_web`: registrar ventas, solo con canal `tienda_web`.
+    - `encargado_bodega`: sin acceso a este servicio.
+
+    **Eliminación:** las ventas no se eliminan. Una venta rechazada se conserva con
+    `estado = rechazada` para mantener el historial.
+
+servers:
+  - url: http://localhost:8080
+    description: A través del API Gateway (peticiones de usuarios y tienda web)
+  - url: http://ventas-service:8000
+    description: Dirección interna en la red de Docker (llamadas entre servicios; ajustar puerto)
+
+tags:
+  - name: Ventas
+    description: Registro y consulta de ventas
+  - name: Indicadores
+    description: Datos agregados que consume Reportes y Dashboard
+  - name: Salud
+    description: Estado del servicio (para el Service Discovery)
+
+paths:
+  /api/ventas:
+    post:
+      tags: [Ventas]
+      summary: Registrar una venta
+      description: |
+        Roles: `administrador`, `vendedor`, `tienda_web`.
+
+        Flujo:
+        1. Valida los datos. Si el rol es `tienda_web`, el canal debe ser `tienda_web`.
+        2. Si no se envió `bodegaId`, consulta a Inventario las bodegas del local y elige una.
+        3. Genera el `ventaId` y guarda la venta con `estado = en_proceso`.
+        4. Llama a Inventario para descontar el stock de todos los ítems ("todo o nada").
+           Inventario devuelve el precio vigente de cada producto.
+        5. Marca la venta `confirmada` y llama a Balance Diario para registrar el ingreso.
+
+        El precio NO lo envía el cliente: se toma de Inventario.
+      operationId: registrarVenta
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VentaNueva'
+            examples:
+              tiendaFisica:
+                summary: Venta en tienda física con efectivo
+                value:
+                  localId: 1
+                  canal: tienda_fisica
+                  medioPago: efectivo
+                  items:
+                    - productoId: 105
+                      cantidad: 2
+                    - productoId: 230
+                      cantidad: 1
+              tiendaWeb:
+                summary: Venta en tienda web con QR y bodega indicada
+                value:
+                  localId: 2
+                  bodegaId: 7
+                  canal: tienda_web
+                  medioPago: qr
+                  items:
+                    - productoId: 105
+                      cantidad: 1
+      responses:
+        '201':
+          description: Venta confirmada y stock descontado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Venta'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '409':
+          description: Stock insuficiente (respuesta de Inventario). La venta queda `rechazada`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: STOCK_INSUFICIENTE
+                detalle: "El producto 105 tiene 1 unidad disponible en la bodega 3 y se pidieron 2"
+        '503':
+          description: Inventario no respondió después de 3 intentos (circuit breaker). La venta queda `rechazada`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: SERVICIO_NO_DISPONIBLE
+                detalle: "Ventas → Inventario: tiempo de espera agotado"
+
+    get:
+      tags: [Ventas]
+      summary: Listar ventas con filtros
+      description: |
+        Externo: `administrador`, `vendedor`.
+        Interno: Reportes y Dashboard (`X-Servicio-Origen: reportes`).
+      operationId: listarVentas
+      security:
+        - bearerAuth: []
+        - servicioOrigen: []
+          empresaInterna: []
+      parameters:
+        - $ref: '#/components/parameters/LocalId'
+        - name: canal
+          in: query
+          schema:
+            $ref: '#/components/schemas/Canal'
+        - name: medioPago
+          in: query
+          schema:
+            $ref: '#/components/schemas/MedioPago'
+        - name: estado
+          in: query
+          description: Por defecto solo se listan las ventas `confirmada`
+          schema:
+            $ref: '#/components/schemas/EstadoVenta'
+        - name: estadoBalance
+          in: query
+          description: Usar `pendiente` para ver las ventas cuyo ingreso no llegó a Balance Diario
+          schema:
+            $ref: '#/components/schemas/EstadoBalance'
+        - $ref: '#/components/parameters/FechaDesde'
+        - $ref: '#/components/parameters/FechaHasta'
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/PorPagina'
+      responses:
+        '200':
+          description: Lista paginada de ventas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  datos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Venta'
+                  paginacion:
+                    $ref: '#/components/schemas/Paginacion'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/ventas/{ventaId}:
+    get:
+      tags: [Ventas]
+      summary: Consultar una venta
+      description: |
+        Externo: `administrador`, `vendedor`. Interno: Reportes.
+        Si la venta pertenece a otra empresa responde 404.
+      operationId: consultarVenta
+      security:
+        - bearerAuth: []
+        - servicioOrigen: []
+          empresaInterna: []
+      parameters:
+        - $ref: '#/components/parameters/VentaId'
+      responses:
+        '200':
+          description: Detalle de la venta
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Venta'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+  /api/ventas/{ventaId}/reintento-balance:
+    post:
+      tags: [Ventas]
+      summary: Reintentar el registro del ingreso en Balance Diario
+      description: |
+        Rol: `administrador`.
+
+        Vuelve a enviar a Balance Diario el ingreso de una venta `confirmada` que
+        quedó con `estadoBalance = pendiente`. No necesita cuerpo.
+
+        Es seguro reintentar: Balance Diario no duplica ingresos por `ventaId`.
+        Si Balance responde que el ingreso ya existía (409), Ventas igualmente marca
+        la venta como `registrado`, porque un intento anterior sí llegó.
+      operationId: reintentarBalance
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VentaId'
+      responses:
+        '200':
+          description: Ingreso registrado; la venta queda con `estadoBalance = registrado`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Venta'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          description: La venta ya estaba `registrado` o está `rechazada`; no hay nada que reintentar
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: BALANCE_YA_REGISTRADO
+                detalle: El ingreso de la venta 3021 ya está registrado en Balance Diario
+        '503':
+          description: Balance Diario sigue sin responder después de 3 intentos; la venta continúa `pendiente`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/ventas/resumen:
+    get:
+      tags: [Indicadores]
+      summary: Resumen de ventas por canal y medio de pago
+      description: |
+        Datos agregados para el indicador "ventas por canal" del dashboard (RF24).
+        Solo cuenta ventas `confirmada`.
+        Externo: `administrador`. Interno: Reportes.
+      operationId: resumenVentas
+      security:
+        - bearerAuth: []
+        - servicioOrigen: []
+          empresaInterna: []
+      parameters:
+        - $ref: '#/components/parameters/LocalId'
+        - $ref: '#/components/parameters/FechaDesde'
+        - $ref: '#/components/parameters/FechaHasta'
+      responses:
+        '200':
+          description: Totales del período
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResumenVentas'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /health:
+    get:
+      tags: [Salud]
+      summary: Estado del servicio
+      description: Lo consulta el Service Discovery. No requiere autenticación.
+      operationId: salud
+      security: []
+      responses:
+        '200':
+          description: Servicio funcionando
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Salud'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Token emitido por el API Gateway. Contiene `empresaId`, `usuarioId` y `rol`.
+    servicioOrigen:
+      type: apiKey
+      in: header
+      name: X-Servicio-Origen
+      description: Nombre del microservicio que llama (por ejemplo `reportes`). Solo red interna.
+    empresaInterna:
+      type: apiKey
+      in: header
+      name: X-Empresa-Id
+      description: Empresa en nombre de la cual se hace la llamada interna.
+
+  parameters:
+    VentaId:
+      name: ventaId
+      in: path
+      required: true
+      schema:
+        type: integer
+      example: 3021
+    LocalId:
+      name: localId
+      in: query
+      description: Filtra por local
+      schema:
+        type: integer
+      example: 1
+    FechaDesde:
+      name: fechaDesde
+      in: query
+      schema:
+        type: string
+        format: date
+      example: '2026-10-01'
+    FechaHasta:
+      name: fechaHasta
+      in: query
+      schema:
+        type: string
+        format: date
+      example: '2026-10-31'
+    Pagina:
+      name: pagina
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PorPagina:
+      name: porPagina
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+  schemas:
+    Canal:
+      type: string
+      enum: [tienda_fisica, tienda_web]
+      description: Canal por el que se hizo la venta (RF15)
+
+    MedioPago:
+      type: string
+      enum: [efectivo, tarjeta, qr]
+      description: Medio de pago de la venta (RF16)
+
+    EstadoVenta:
+      type: string
+      enum: [en_proceso, confirmada, rechazada]
+      description: |
+        `en_proceso`: se está descontando el stock.
+        `confirmada`: Inventario descontó el stock.
+        `rechazada`: Inventario rechazó o no respondió; no se descontó nada.
+
+    EstadoBalance:
+      type: string
+      enum: [registrado, pendiente, no_aplica]
+      description: |
+        `registrado`: Balance Diario recibió el ingreso.
+        `pendiente`: Balance Diario no respondió; el fallo quedó en el log (RF30)
+        y se puede reintentar.
+        `no_aplica`: la venta fue rechazada, así que no genera ingreso.
+
+    ItemNuevo:
+      type: object
+      required: [productoId, cantidad]
+      properties:
+        productoId:
+          type: integer
+          example: 105
+        cantidad:
+          type: integer
+          minimum: 1
+          example: 2
+
+    VentaNueva:
+      type: object
+      required: [localId, canal, medioPago, items]
+      properties:
+        localId:
+          type: integer
+          example: 1
+        bodegaId:
+          type: integer
+          description: Opcional. Si no se envía, Ventas elige una bodega del local consultando a Inventario.
+          example: 3
+        canal:
+          $ref: '#/components/schemas/Canal'
+        medioPago:
+          $ref: '#/components/schemas/MedioPago'
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ItemNuevo'
+
+    ItemVenta:
+      type: object
+      properties:
+        productoId:
+          type: integer
+          example: 105
+        cantidad:
+          type: integer
+          example: 2
+        precioUnitario:
+          type: number
+          description: Precio tomado de Inventario al momento de la venta
+          example: 12500
+        subtotal:
+          type: number
+          example: 25000
+
+    Venta:
+      type: object
+      properties:
+        ventaId:
+          type: integer
+          example: 3021
+        empresaId:
+          type: integer
+          readOnly: true
+          description: Tomado del JWT o del header X-Empresa-Id
+          example: 4
+        localId:
+          type: integer
+          example: 1
+        bodegaId:
+          type: integer
+          description: Bodega de la que se descontó el stock
+          example: 3
+        canal:
+          $ref: '#/components/schemas/Canal'
+        medioPago:
+          $ref: '#/components/schemas/MedioPago'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemVenta'
+        total:
+          type: number
+          example: 43000
+        usuarioId:
+          type: integer
+          readOnly: true
+          description: Usuario que registró la venta (tomado del JWT)
+          example: 12
+        fechaHora:
+          type: string
+          format: date-time
+          example: '2026-10-23T15:42:10-05:00'
+        estado:
+          $ref: '#/components/schemas/EstadoVenta'
+        estadoBalance:
+          $ref: '#/components/schemas/EstadoBalance'
+
+    ResumenVentas:
+      type: object
+      properties:
+        fechaDesde:
+          type: string
+          format: date
+        fechaHasta:
+          type: string
+          format: date
+        localId:
+          type: integer
+          nullable: true
+          description: null si es el total de todos los locales de la empresa
+        totalVentas:
+          type: number
+          example: 1850000
+        cantidadVentas:
+          type: integer
+          example: 74
+        porCanal:
+          type: object
+          properties:
+            tienda_fisica:
+              type: number
+              example: 1200000
+            tienda_web:
+              type: number
+              example: 650000
+        porMedioPago:
+          type: object
+          properties:
+            efectivo:
+              type: number
+              example: 700000
+            tarjeta:
+              type: number
+              example: 800000
+            qr:
+              type: number
+              example: 350000
+
+    Paginacion:
+      type: object
+      properties:
+        pagina:
+          type: integer
+          example: 1
+        porPagina:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 74
+
+    Salud:
+      type: object
+      properties:
+        servicio:
+          type: string
+          example: ventas
+        estado:
+          type: string
+          example: ok
+
+    Error:
+      type: object
+      required: [error, detalle]
+      properties:
+        error:
+          type: string
+          description: Código del error en mayúsculas
+          example: DATOS_INVALIDOS
+        detalle:
+          type: string
+          example: "El campo medioPago debe ser efectivo, tarjeta o qr"
+
+  responses:
+    DatosInvalidos:
+      description: Los datos enviados no son válidos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NoAutenticado:
+      description: Falta el token (o los headers internos) o no es válido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: NO_AUTENTICADO
+            detalle: Token inválido o vencido
+    SinPermiso:
+      description: El rol no permite esta operación
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: SIN_PERMISO
+            detalle: El rol tienda_web solo puede registrar ventas con canal tienda_web
+    NoEncontrado:
+      description: El recurso no existe o pertenece a otra empresa
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: NO_ENCONTRADO
+            detalle: La venta 3021 no existe
