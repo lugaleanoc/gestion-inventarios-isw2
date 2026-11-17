@@ -33,8 +33,8 @@ class Config:
     # "mysql+pymysql" significa: base MySQL, usando el driver PyMySQL.
     SQLALCHEMY_DATABASE_URI = (
         "mysql+pymysql://{usuario}:{clave}@{host}:{puerto}/{nombre}?charset=utf8mb4".format(
-            usuario=os.getenv("DB_USUARIO", "inventario"),
-            clave=os.getenv("DB_CLAVE", "inventario"),
+            usuario=os.getenv("DB_USUARIO", "root"),
+            clave=os.getenv("DB_CLAVE", ""),
             host=os.getenv("DB_HOST", "localhost"),
             puerto=_entero("DB_PUERTO", 3306),
             nombre=os.getenv("DB_NOMBRE", "inventario_db"),

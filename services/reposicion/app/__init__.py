@@ -90,7 +90,7 @@ def _publicar_swagger(app):
     try:
         import yaml
         from flasgger import Swagger
-
+        
         with open(ruta_contrato, "r", encoding="utf-8") as archivo:
             contrato = yaml.safe_load(archivo)
 

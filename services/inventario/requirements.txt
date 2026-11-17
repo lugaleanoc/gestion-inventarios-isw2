@@ -1,10 +1,31 @@
-# Dependencias del microservicio de Inventario.
-# Se instalan con: pip install -r requirements.txt
-
-Flask==3.0.3                 # Framework web: define las rutas y maneja las peticiones HTTP
-Flask-SQLAlchemy==3.1.1      # ORM: permite trabajar la base de datos con clases de Python
-PyMySQL==1.1.1               # Driver que conecta SQLAlchemy con MySQL
-python-dotenv==1.0.1         # Lee el archivo .env con las variables de entorno (solo en local)
-requests==2.32.3             # Cliente HTTP para llamar a los otros microservicios (REST)
-gunicorn==22.0.0             # Servidor de produccion: es el que se ejecuta dentro del contenedor
-flasgger==0.9.7.1            # Publica el contrato OpenAPI como pagina de Swagger en /docs
+attrs==26.1.0
+blinker==1.9.0
+certifi==2026.10.23
+cffi==2.1.1
+charset-normalizer==3.5.2
+click==8.5.1
+cryptography==50.0.2
+flasgger==0.9.7.1
+Flask==3.0.3
+Flask-SQLAlchemy==3.1.1
+gunicorn==22.0.0
+idna==3.20
+itsdangerous==2.2.0
+Jinja2==3.1.6
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+MarkupSafe==3.0.4
+mistune==3.4.0
+packaging==26.3
+pycparser==3.12
+PyMySQL==1.1.1
+python-dotenv==1.0.1
+PyYAML==6.0.3
+referencing==0.37.0
+requests==2.32.3
+rpds-py==2026.9.1
+six==1.17.0
+SQLAlchemy==2.1.8
+typing_extensions==4.16.0
+urllib3==2.8.0
+Werkzeug==3.1.9
