@@ -1,0 +1,739 @@
+openapi: 3.0.3
+info:
+  title: JAK Inventory — Microservicio de Reposición
+  version: 1.0.0
+  description: |
+    Detecta necesidades de abastecimiento y gestiona solicitudes y órdenes de
+    reposición a proveedores (RF06, RF18, RF19, RF20).
+
+    **Quién lo llama:**
+    - **Inventario** (interno): `POST /api/reposicion/solicitudes/automaticas` cuando un
+      producto llega al stock mínimo (decisión 3).
+    - **Usuarios** (vía Gateway): consultan, aprueban y reciben.
+    - **Reportes** (interno): estado de las reposiciones.
+
+    **A quién llama (REST, circuit breaker, hasta 3 reintentos — RF30):**
+    - **Inventario**: stock actual del producto y registro de entradas al recibir una orden.
+    - **Proveedores**: proveedor del producto (decisión 6, RF20).
+    - **Configuración**: stock mínimo vigente.
+
+    **Sin duplicados (RF18):** si un producto ya tiene una solicitud abierta
+    (`pendiente`, `aprobada` o `en_orden`), no se crea otra.
+
+    **Roles:** `administrador` aprueba, rechaza y crea órdenes (RF29);
+    `encargado_bodega` crea solicitudes manuales y registra recepciones; `vendedor` solo consulta.
+
+    **Eliminación:** solicitudes y órdenes no se borran; se rechazan o cancelan.
+servers:
+- url: http://localhost:8080
+  description: A través del API Gateway
+- url: http://reposicion-service:8000
+  description: Dirección interna en la red de Docker (ajustar puerto)
+tags:
+- name: Solicitudes
+  description: Solicitudes de reposición
+- name: Órdenes de compra
+  description: Órdenes a proveedores y recepción de mercancía (RF06)
+- name: Indicadores
+  description: Datos para Reportes
+- name: Salud
+  description: Estado del servicio
+paths:
+  /api/reposicion/solicitudes/automaticas:
+    post:
+      tags:
+      - Solicitudes
+      summary: Crear una solicitud automática (ruta interna, la llama Inventario)
+      description: |
+        Ruta interna (decisión 7). Solo acepta `X-Servicio-Origen: inventario`.
+        Reposición confirma el stock mínimo con Configuración, busca el proveedor en
+        Proveedores y crea la solicitud `pendiente`. Si el producto ya tiene una
+        solicitud abierta, responde 200 con la existente y no duplica.
+      operationId: crearSolicitudAutomatica
+      security:
+      - servicioOrigen: []
+        empresaInterna: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - productoId
+              - stockActual
+              properties:
+                productoId:
+                  type: integer
+                  example: 105
+                stockActual:
+                  type: integer
+                  description: Total del producto en todas las bodegas
+                  example: 3
+      responses:
+        '200':
+          description: Ya existía una solicitud abierta para el producto (no se duplica)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Solicitud'
+        '201':
+          description: Solicitud creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Solicitud'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+  /api/reposicion/solicitudes:
+    get:
+      tags:
+      - Solicitudes
+      summary: Listar solicitudes y su estado (RF19)
+      operationId: listarSolicitudes
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      parameters:
+      - name: estado
+        in: query
+        schema:
+          $ref: '#/components/schemas/EstadoSolicitud'
+      - name: productoId
+        in: query
+        schema:
+          type: integer
+      - name: origen
+        in: query
+        schema:
+          type: string
+          enum:
+          - automatica
+          - manual
+      - $ref: '#/components/parameters/FechaDesde'
+      - $ref: '#/components/parameters/FechaHasta'
+      - $ref: '#/components/parameters/Pagina'
+      - $ref: '#/components/parameters/PorPagina'
+      responses:
+        '200':
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  datos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Solicitud'
+                  paginacion:
+                    $ref: '#/components/schemas/Paginacion'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+    post:
+      tags:
+      - Solicitudes
+      summary: Crear una solicitud manual
+      description: 'Roles: `administrador`, `encargado_bodega`. Responde 409 si ya hay una abierta para el producto.'
+      operationId: crearSolicitudManual
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - productoId
+              - cantidadSugerida
+              properties:
+                productoId:
+                  type: integer
+                cantidadSugerida:
+                  type: integer
+                  minimum: 1
+                observacion:
+                  type: string
+      responses:
+        '201':
+          description: Solicitud creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Solicitud'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '409':
+          description: Ya existe una solicitud abierta para ese producto
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
+  /api/reposicion/solicitudes/{solicitudId}:
+    get:
+      tags:
+      - Solicitudes
+      summary: Consultar una solicitud
+      operationId: consultarSolicitud
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      parameters:
+      - $ref: '#/components/parameters/SolicitudId'
+      responses:
+        '200':
+          description: Solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Solicitud'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+  /api/reposicion/solicitudes/{solicitudId}/aprobacion:
+    post:
+      tags:
+      - Solicitudes
+      summary: Aprobar una solicitud (RF29)
+      description: 'Rol: `administrador`. Solo para solicitudes `pendiente`.'
+      operationId: aprobarSolicitud
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/SolicitudId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cantidadAprobada:
+                  type: integer
+                  minimum: 1
+                  description: Si no se envía, se aprueba la cantidad sugerida
+      responses:
+        '200':
+          description: Solicitud aprobada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Solicitud'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+  /api/reposicion/solicitudes/{solicitudId}/rechazo:
+    post:
+      tags:
+      - Solicitudes
+      summary: Rechazar una solicitud
+      description: 'Rol: `administrador`.'
+      operationId: rechazarSolicitud
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/SolicitudId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - motivo
+              properties:
+                motivo:
+                  type: string
+      responses:
+        '200':
+          description: Solicitud rechazada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Solicitud'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+  /api/reposicion/ordenes:
+    get:
+      tags:
+      - Órdenes de compra
+      summary: Listar órdenes de compra
+      operationId: listarOrdenes
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      parameters:
+      - name: estado
+        in: query
+        schema:
+          $ref: '#/components/schemas/EstadoOrden'
+      - name: proveedorId
+        in: query
+        schema:
+          type: integer
+      - $ref: '#/components/parameters/Pagina'
+      - $ref: '#/components/parameters/PorPagina'
+      responses:
+        '200':
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  datos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Orden'
+                  paginacion:
+                    $ref: '#/components/schemas/Paginacion'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+    post:
+      tags:
+      - Órdenes de compra
+      summary: Generar la orden de compra de una solicitud aprobada (RF06)
+      description: 'Rol: `administrador`. La solicitud pasa a `en_orden`.'
+      operationId: crearOrden
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - solicitudId
+              properties:
+                solicitudId:
+                  type: integer
+                  example: 41
+                fechaEstimadaEntrega:
+                  type: string
+                  format: date
+      responses:
+        '201':
+          description: Orden emitida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Orden'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '409':
+          description: La solicitud no está aprobada o no tiene proveedor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/reposicion/ordenes/{ordenId}:
+    get:
+      tags:
+      - Órdenes de compra
+      summary: Consultar una orden
+      operationId: consultarOrden
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      parameters:
+      - $ref: '#/components/parameters/OrdenId'
+      responses:
+        '200':
+          description: Orden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Orden'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+  /api/reposicion/ordenes/{ordenId}/recepcion:
+    post:
+      tags:
+      - Órdenes de compra
+      summary: Registrar la recepción de la mercancía
+      description: |
+        Roles: `administrador`, `encargado_bodega`.
+        Llama a Inventario (`POST /api/inventario/stock/entradas`) para sumar el stock.
+        Si Inventario no responde, la recepción NO se registra (503) y se puede repetir,
+        porque Inventario no suma dos veces la misma orden.
+      operationId: registrarRecepcion
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/OrdenId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - bodegaId
+              - cantidadRecibida
+              properties:
+                bodegaId:
+                  type: integer
+                  example: 3
+                cantidadRecibida:
+                  type: integer
+                  minimum: 1
+                  example: 50
+      responses:
+        '200':
+          description: Mercancía recibida; orden y solicitud quedan `recibida`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Orden'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
+  /api/reposicion/ordenes/{ordenId}/cancelacion:
+    post:
+      tags:
+      - Órdenes de compra
+      summary: Cancelar una orden emitida
+      description: 'Rol: `administrador`. La solicitud vuelve a `aprobada`.'
+      operationId: cancelarOrden
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/OrdenId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - motivo
+              properties:
+                motivo:
+                  type: string
+      responses:
+        '200':
+          description: Orden cancelada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Orden'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+  /api/reposicion/resumen:
+    get:
+      tags:
+      - Indicadores
+      summary: Cantidad de solicitudes por estado (para el dashboard, RF24)
+      operationId: resumenReposiciones
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      responses:
+        '200':
+          description: Conteo por estado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pendiente:
+                    type: integer
+                    example: 4
+                  aprobada:
+                    type: integer
+                    example: 2
+                  en_orden:
+                    type: integer
+                    example: 3
+                  recibida:
+                    type: integer
+                    example: 18
+                  rechazada:
+                    type: integer
+                    example: 1
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+  /health:
+    get:
+      tags:
+      - Salud
+      summary: Estado del servicio
+      description: Lo consulta el Service Discovery (y Docker) para saber si el servicio está vivo. No requiere autenticación.
+      operationId: salud
+      security: []
+      responses:
+        '200':
+          description: Servicio funcionando
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Salud'
+              example:
+                servicio: reposicion
+                estado: ok
+components:
+  parameters:
+    Pagina:
+      name: pagina
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PorPagina:
+      name: porPagina
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    FechaDesde:
+      name: fechaDesde
+      in: query
+      schema:
+        type: string
+        format: date
+      example: '2026-10-01'
+    FechaHasta:
+      name: fechaHasta
+      in: query
+      schema:
+        type: string
+        format: date
+      example: '2026-10-31'
+    LocalIdFiltro:
+      name: localId
+      in: query
+      description: Filtra por local
+      schema:
+        type: integer
+      example: 1
+    SolicitudId:
+      name: solicitudId
+      in: path
+      required: true
+      schema:
+        type: integer
+      example: 41
+    OrdenId:
+      name: ordenId
+      in: path
+      required: true
+      schema:
+        type: integer
+      example: 77
+  schemas:
+    Error:
+      type: object
+      required:
+      - error
+      - detalle
+      properties:
+        error:
+          type: string
+          description: Código del error en mayúsculas
+          example: DATOS_INVALIDOS
+        detalle:
+          type: string
+          example: Falta un campo obligatorio
+    Paginacion:
+      type: object
+      properties:
+        pagina:
+          type: integer
+          example: 1
+        porPagina:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 57
+    Salud:
+      type: object
+      properties:
+        servicio:
+          type: string
+        estado:
+          type: string
+          example: ok
+    EstadoSolicitud:
+      type: string
+      enum:
+      - pendiente
+      - aprobada
+      - rechazada
+      - en_orden
+      - recibida
+    EstadoOrden:
+      type: string
+      enum:
+      - emitida
+      - recibida
+      - cancelada
+    Solicitud:
+      type: object
+      properties:
+        solicitudId:
+          type: integer
+          example: 41
+        productoId:
+          type: integer
+          example: 105
+        proveedorId:
+          type: integer
+          nullable: true
+          description: null si el producto no tiene proveedor asociado
+          example: 9
+        origen:
+          type: string
+          enum:
+          - automatica
+          - manual
+        stockAlCrear:
+          type: integer
+          example: 3
+        stockMinimo:
+          type: integer
+          example: 10
+        cantidadSugerida:
+          type: integer
+          example: 50
+        cantidadAprobada:
+          type: integer
+          nullable: true
+        estado:
+          $ref: '#/components/schemas/EstadoSolicitud'
+        motivoRechazo:
+          type: string
+          nullable: true
+        creadaPor:
+          type: string
+          description: usuarioId o `inventario` si fue automática
+        fechaCreacion:
+          type: string
+          format: date-time
+    Orden:
+      type: object
+      properties:
+        ordenId:
+          type: integer
+          example: 77
+        solicitudId:
+          type: integer
+          example: 41
+        proveedorId:
+          type: integer
+          example: 9
+        productoId:
+          type: integer
+          example: 105
+        cantidad:
+          type: integer
+          example: 50
+        estado:
+          $ref: '#/components/schemas/EstadoOrden'
+        fechaEmision:
+          type: string
+          format: date-time
+        fechaEstimadaEntrega:
+          type: string
+          format: date
+          nullable: true
+        recepcion:
+          type: object
+          nullable: true
+          properties:
+            bodegaId:
+              type: integer
+            cantidadRecibida:
+              type: integer
+            fechaRecepcion:
+              type: string
+              format: date-time
+            recibidaPor:
+              type: integer
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token emitido por el API Gateway. Contiene `empresaId`, `usuarioId` y `rol`.
+    servicioOrigen:
+      type: apiKey
+      in: header
+      name: X-Servicio-Origen
+      description: Nombre del microservicio que llama. Solo red interna de Docker (el Gateway no enruta estas llamadas).
+    empresaInterna:
+      type: apiKey
+      in: header
+      name: X-Empresa-Id
+      description: Empresa en nombre de la cual se hace la llamada interna.
+  responses:
+    DatosInvalidos:
+      description: Los datos enviados no son válidos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NoAutenticado:
+      description: Falta el token (o los headers internos) o no es válido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    SinPermiso:
+      description: El rol (o el servicio de origen) no permite esta operación
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NoEncontrado:
+      description: El recurso no existe o pertenece a otra empresa
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflicto:
+      description: La operación choca con el estado actual de los datos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServicioNoDisponible:
+      description: Un servicio del que depende no respondió después de 3 intentos (circuit breaker)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
