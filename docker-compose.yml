@@ -1,0 +1,107 @@
+# Entorno de desarrollo local (el enunciado permite compose solo para esto;
+# la orquestacion de verdad es Kubernetes, RNF04).
+#
+#   docker compose up inventario            levanta Inventario y su MySQL
+#   docker compose logs -f inventario       ver los logs
+#   docker compose down                     apagar todo
+#
+# Cada integrante agrega aqui el bloque de sus servicios. Mantiene el
+# archivo Jasmin, segun el reparto de la Entrega 3.
+
+services:
+
+  # ---------------------------------------------------------------
+  # Inventario (Amanda)
+  # ---------------------------------------------------------------
+  inventario-db:
+    image: mysql:8.0
+    container_name: inventario-db
+    environment:
+      # Estas variables las entiende la imagen oficial de MySQL y con ellas
+      # crea la base y el usuario la primera vez que arranca.
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: inventario_db
+      MYSQL_USER: inventario
+      MYSQL_PASSWORD: inventario
+    ports:
+      # Se expone en un puerto distinto por servicio para poder tener las
+      # ocho bases levantadas a la vez sin que choquen.
+      - "3307:3306"
+    volumes:
+      # Volumen con nombre: los datos sobreviven a  docker compose down.
+      - datos-inventario:/var/lib/mysql
+    healthcheck:
+      # Avisa cuando MySQL ya acepta conexiones. Sin esto, el servicio
+      # arranca antes que la base y falla al conectarse.
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  inventario:
+    build: ./services/inventario
+    container_name: inventario-service
+    environment:
+      NOMBRE_SERVICIO: inventario
+      DB_HOST: inventario-db        # el nombre del servicio funciona como DNS
+      DB_PUERTO: 3306
+      DB_NOMBRE: inventario_db
+      DB_USUARIO: inventario
+      DB_CLAVE: inventario
+      CREAR_TABLAS: "true"
+      CONFIGURACION_URL: http://configuracion-service:8000
+      PROVEEDORES_URL: http://proveedores-service:8000
+      REPOSICION_URL: http://reposicion-service:8000
+      STOCK_MINIMO_POR_DEFECTO: 5
+    ports:
+      - "8001:8000"
+    depends_on:
+      inventario-db:
+        condition: service_healthy  # espera a que la base este lista
+
+  # ---------------------------------------------------------------
+  # Reposicion (Amanda)
+  # ---------------------------------------------------------------
+  reposicion-db:
+    image: mysql:8.0
+    container_name: reposicion-db
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: reposicion_db
+      MYSQL_USER: reposicion
+      MYSQL_PASSWORD: reposicion
+    ports:
+      - "3308:3306"
+    volumes:
+      - datos-reposicion:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  reposicion:
+    build: ./services/reposicion
+    container_name: reposicion-service
+    environment:
+      NOMBRE_SERVICIO: reposicion
+      DB_HOST: reposicion-db
+      DB_PUERTO: 3306
+      DB_NOMBRE: reposicion_db
+      DB_USUARIO: reposicion
+      DB_CLAVE: reposicion
+      CREAR_TABLAS: "true"
+      INVENTARIO_URL: http://inventario-service:8000
+      PROVEEDORES_URL: http://proveedores-service:8000
+      CONFIGURACION_URL: http://configuracion-service:8000
+      STOCK_MINIMO_POR_DEFECTO: 5
+      FACTOR_REPOSICION: 3
+    ports:
+      - "8002:8000"
+    depends_on:
+      reposicion-db:
+        condition: service_healthy
+
+volumes:
+  datos-inventario:
+  datos-reposicion:

@@ -1,0 +1,9 @@
+# Archivos que NO deben entrar a la imagen: la hacen mas pesada
+# y algunos traerian datos de la maquina de desarrollo.
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+.pytest_cache/
+*.md
