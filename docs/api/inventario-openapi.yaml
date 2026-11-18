@@ -1,0 +1,1202 @@
+openapi: 3.0.3
+info:
+  title: JAK Inventory — Microservicio de Inventario
+  version: 1.0.0
+  description: |
+    Administra productos, categorías y bodegas, y controla las existencias de cada
+    local (RF01, RF02, RF04, RF05). Mantiene el kardex (RF10).
+
+    **Identificación de la empresa:** del JWT (vía Gateway) o de `X-Empresa-Id` (llamadas internas).
+
+    **Quién lo llama:**
+    - **Ventas** (interno): descuenta stock (`POST /api/inventario/stock/descuentos`) y consulta bodegas.
+    - **Reposición** (interno): consulta stock y registra entradas de mercancía.
+    - **Reportes** (interno): indicadores y existencias.
+
+    **A quién llama (REST, circuit breaker, hasta 3 reintentos — RF30):**
+    - **Configuración**: stock mínimo vigente y alertas activas.
+    - **Reposición** `POST /api/reposicion/solicitudes/automaticas`: avisa cuando el total de un
+      producto queda en o por debajo del mínimo (decisiones 3 y 4).
+    - **Proveedores**: valida que el `proveedorId` de un producto exista (decisión 6).
+
+    **Stock mínimo (decisión 4):** se evalúa sobre el total del producto (suma de todas las bodegas).
+
+    **Integridad (RNF20):** los movimientos no se editan ni se borran; se corrigen con un ajuste.
+    Productos, categorías y bodegas se dan de baja lógica (decisión 8).
+
+    **Roles:** `administrador` todo; `encargado_bodega` productos, bodegas y movimientos;
+    `vendedor` solo consultas.
+servers:
+- url: http://localhost:8080
+  description: A través del API Gateway
+- url: http://inventario-service:8000
+  description: Dirección interna en la red de Docker (ajustar puerto)
+tags:
+- name: Categorías
+  description: Categorías y subcategorías (RF02)
+- name: Productos
+  description: Catálogo de productos (RF01, RF12)
+- name: Bodegas
+  description: Bodegas por local (RF05)
+- name: Stock
+  description: Existencias y operaciones internas
+- name: Movimientos
+  description: Entradas, salidas, ajustes, traslados, devoluciones y kardex (RF04, RF10, RF13)
+- name: Alertas e indicadores
+  description: RF09, RF11, RF14
+- name: Salud
+  description: Estado del servicio
+paths:
+  /api/inventario/categorias:
+    get:
+      tags:
+      - Categorías
+      summary: Listar categorías
+      operationId: listarCategorias
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      parameters:
+      - name: categoriaPadreId
+        in: query
+        description: Para listar subcategorías
+        schema:
+          type: integer
+      - name: activo
+        in: query
+        schema:
+          type: boolean
+          default: true
+      responses:
+        '200':
+          description: Categorías
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Categoria'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+    post:
+      tags:
+      - Categorías
+      summary: Crear una categoría o subcategoría
+      description: 'Roles: `administrador`, `encargado_bodega`.'
+      operationId: crearCategoria
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoriaNueva'
+      responses:
+        '201':
+          description: Categoría creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Categoria'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+  /api/inventario/categorias/{categoriaId}:
+    parameters:
+    - name: categoriaId
+      in: path
+      required: true
+      schema:
+        type: integer
+    get:
+      tags:
+      - Categorías
+      summary: Consultar una categoría
+      operationId: consultarCategoria
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Categoría
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Categoria'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    put:
+      tags:
+      - Categorías
+      summary: Actualizar una categoría
+      description: 'Roles: `administrador`, `encargado_bodega`.'
+      operationId: actualizarCategoria
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoriaNueva'
+      responses:
+        '200':
+          description: Categoría actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Categoria'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    delete:
+      tags:
+      - Categorías
+      summary: Dar de baja una categoría (baja lógica)
+      description: 'Rol: `administrador`. Responde 409 si tiene productos activos.'
+      operationId: darBajaCategoria
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Categoría dada de baja
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Categoria'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+  /api/inventario/productos:
+    get:
+      tags:
+      - Productos
+      summary: Buscar y filtrar productos (RF12)
+      operationId: listarProductos
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      parameters:
+      - name: q
+        in: query
+        description: Texto a buscar en nombre o código
+        schema:
+          type: string
+      - name: categoriaId
+        in: query
+        schema:
+          type: integer
+      - name: proveedorId
+        in: query
+        schema:
+          type: integer
+      - name: activo
+        in: query
+        schema:
+          type: boolean
+          default: true
+      - $ref: '#/components/parameters/Pagina'
+      - $ref: '#/components/parameters/PorPagina'
+      responses:
+        '200':
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  datos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Producto'
+                  paginacion:
+                    $ref: '#/components/schemas/Paginacion'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+    post:
+      tags:
+      - Productos
+      summary: Crear un producto
+      description: |
+        Roles: `administrador`, `encargado_bodega`.
+        Si se envía `proveedorId`, se valida con Proveedores que exista (decisión 6).
+      operationId: crearProducto
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductoNuevo'
+      responses:
+        '201':
+          description: Producto creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Producto'
+        '400':
+          description: Datos inválidos o el proveedor no existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: PROVEEDOR_NO_EXISTE
+                detalle: El proveedor 9 no existe
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '409':
+          description: Ya existe un producto con ese código
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
+  /api/inventario/productos/{productoId}:
+    parameters:
+    - name: productoId
+      in: path
+      required: true
+      schema:
+        type: integer
+      example: 105
+    get:
+      tags:
+      - Productos
+      summary: Consultar un producto
+      operationId: consultarProducto
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      responses:
+        '200':
+          description: Producto
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Producto'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    put:
+      tags:
+      - Productos
+      summary: Actualizar un producto
+      description: 'Roles: `administrador`, `encargado_bodega`.'
+      operationId: actualizarProducto
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductoNuevo'
+      responses:
+        '200':
+          description: Producto actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Producto'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    delete:
+      tags:
+      - Productos
+      summary: Dar de baja un producto (baja lógica)
+      description: 'Rol: `administrador`. El kardex y las ventas que lo referencian se conservan.'
+      operationId: darBajaProducto
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Producto dado de baja
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Producto'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+  /api/inventario/bodegas:
+    get:
+      tags:
+      - Bodegas
+      summary: Listar bodegas (Ventas la usa con `localId` para elegir bodega)
+      operationId: listarBodegas
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      parameters:
+      - $ref: '#/components/parameters/LocalIdFiltro'
+      - name: activo
+        in: query
+        schema:
+          type: boolean
+          default: true
+      responses:
+        '200':
+          description: Bodegas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Bodega'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+    post:
+      tags:
+      - Bodegas
+      summary: Crear una bodega en un local
+      description: 'Rol: `administrador`.'
+      operationId: crearBodega
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BodegaNueva'
+      responses:
+        '201':
+          description: Bodega creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bodega'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+  /api/inventario/bodegas/{bodegaId}:
+    parameters:
+    - name: bodegaId
+      in: path
+      required: true
+      schema:
+        type: integer
+    get:
+      tags:
+      - Bodegas
+      summary: Consultar una bodega
+      operationId: consultarBodega
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      responses:
+        '200':
+          description: Bodega
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bodega'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    put:
+      tags:
+      - Bodegas
+      summary: Actualizar una bodega
+      description: 'Rol: `administrador`.'
+      operationId: actualizarBodega
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BodegaNueva'
+      responses:
+        '200':
+          description: Bodega actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bodega'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    delete:
+      tags:
+      - Bodegas
+      summary: Dar de baja una bodega (baja lógica)
+      description: 'Rol: `administrador`. Responde 409 si todavía tiene existencias.'
+      operationId: darBajaBodega
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Bodega dada de baja
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bodega'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+  /api/inventario/stock:
+    get:
+      tags:
+      - Stock
+      summary: Consultar existencias por bodega
+      operationId: consultarStock
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      parameters:
+      - name: productoId
+        in: query
+        schema:
+          type: integer
+      - name: bodegaId
+        in: query
+        schema:
+          type: integer
+      - $ref: '#/components/parameters/LocalIdFiltro'
+      - $ref: '#/components/parameters/Pagina'
+      - $ref: '#/components/parameters/PorPagina'
+      responses:
+        '200':
+          description: Existencias
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  datos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StockBodega'
+                  paginacion:
+                    $ref: '#/components/schemas/Paginacion'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+  /api/inventario/stock/productos/{productoId}:
+    get:
+      tags:
+      - Stock
+      summary: Stock total de un producto (lo usa Reposición)
+      description: Devuelve el total (suma de bodegas, decisión 4) y el detalle por bodega.
+      operationId: stockProducto
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      parameters:
+      - name: productoId
+        in: path
+        required: true
+        schema:
+          type: integer
+        example: 105
+      responses:
+        '200':
+          description: Stock del producto
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockProducto'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+  /api/inventario/stock/descuentos:
+    post:
+      tags:
+      - Stock
+      summary: Descontar stock por una venta (ruta interna, la llama Ventas)
+      description: |
+        Ruta interna (decisión 7). Solo acepta `X-Servicio-Origen: ventas` (decisión 5).
+
+        - **Todo o nada:** si un solo ítem no tiene stock suficiente, no se descuenta ninguno (409).
+        - **Idempotente por `ventaId`:** si llega de nuevo el mismo `ventaId` (reintento),
+          no descuenta otra vez y responde 200 con el mismo resultado.
+        - Devuelve el `precioUnitario` vigente de cada producto (Ventas lo necesita).
+        - Después de descontar, evalúa el stock mínimo del total del producto y, si se
+          alcanzó, avisa a Reposición (decisión 3).
+      operationId: descontarStock
+      security:
+      - servicioOrigen: []
+        empresaInterna: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DescuentoVenta'
+            example:
+              ventaId: 3021
+              items:
+              - productoId: 105
+                bodegaId: 3
+                cantidad: 2
+              - productoId: 230
+                bodegaId: 3
+                cantidad: 1
+      responses:
+        '200':
+          description: Stock descontado (o ya se había descontado para ese ventaId)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultadoDescuento'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '409':
+          description: Stock insuficiente en al menos un ítem; no se descontó nada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: STOCK_INSUFICIENTE
+                detalle: El producto 105 tiene 1 unidad disponible en la bodega 3 y se pidieron 2
+  /api/inventario/stock/entradas:
+    post:
+      tags:
+      - Stock
+      summary: Registrar la entrada de mercancía recibida (ruta interna, la llama Reposición)
+      description: |
+        Ruta interna. Solo acepta `X-Servicio-Origen: reposicion`.
+        Idempotente por `ordenId`: si la orden ya se registró responde 409 y no suma dos veces.
+      operationId: registrarEntradaReposicion
+      security:
+      - servicioOrigen: []
+        empresaInterna: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - ordenId
+              - items
+              properties:
+                ordenId:
+                  type: integer
+                  example: 77
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    $ref: '#/components/schemas/ItemStock'
+      responses:
+        '201':
+          description: Entrada registrada en el stock y en el kardex
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Movimiento'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '409':
+          description: La entrada de esa orden ya estaba registrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/inventario/movimientos:
+    get:
+      tags:
+      - Movimientos
+      summary: Kardex — histórico de movimientos (RF10)
+      operationId: listarMovimientos
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      parameters:
+      - name: productoId
+        in: query
+        schema:
+          type: integer
+      - name: bodegaId
+        in: query
+        schema:
+          type: integer
+      - name: tipo
+        in: query
+        schema:
+          $ref: '#/components/schemas/TipoMovimiento'
+      - $ref: '#/components/parameters/FechaDesde'
+      - $ref: '#/components/parameters/FechaHasta'
+      - $ref: '#/components/parameters/Pagina'
+      - $ref: '#/components/parameters/PorPagina'
+      responses:
+        '200':
+          description: Movimientos (quién, cuándo y qué)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  datos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Movimiento'
+                  paginacion:
+                    $ref: '#/components/schemas/Paginacion'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+    post:
+      tags:
+      - Movimientos
+      summary: Registrar un movimiento manual
+      description: |
+        Roles: `administrador`, `encargado_bodega`.
+        Tipos: entrada, salida, ajuste (cantidad positiva o negativa), traslado (requiere
+        `bodegaDestinoId`) y devoluciones de cliente o a proveedor (RF13).
+      operationId: registrarMovimiento
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MovimientoNuevo'
+            example:
+              tipo: traslado
+              productoId: 105
+              bodegaId: 3
+              bodegaDestinoId: 5
+              cantidad: 10
+              motivo: Surtir sede norte
+      responses:
+        '201':
+          description: Movimiento registrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Movimiento'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '409':
+          description: Stock insuficiente para una salida o traslado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/inventario/alertas:
+    get:
+      tags:
+      - Alertas e indicadores
+      summary: Productos en o por debajo del stock mínimo (RF09)
+      description: |
+        Para mostrar en el panel web (no hay correo, decisión 9). Solo devuelve
+        resultados si la alerta está activa en Configuración.
+      operationId: listarAlertas
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Productos en alerta
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AlertaStock'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
+  /api/inventario/indicadores:
+    get:
+      tags:
+      - Alertas e indicadores
+      summary: Indicadores de inventario (RF11, RF14)
+      description: 'Externo: `administrador`, `encargado_bodega`. Interno: Reportes.'
+      operationId: indicadoresInventario
+      security:
+      - bearerAuth: []
+      - servicioOrigen: []
+        empresaInterna: []
+      parameters:
+      - $ref: '#/components/parameters/LocalIdFiltro'
+      - $ref: '#/components/parameters/FechaDesde'
+      - $ref: '#/components/parameters/FechaHasta'
+      responses:
+        '200':
+          description: Indicadores del período
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndicadoresInventario'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+  /health:
+    get:
+      tags:
+      - Salud
+      summary: Estado del servicio
+      description: Lo consulta el Service Discovery (y Docker) para saber si el servicio está vivo. No requiere autenticación.
+      operationId: salud
+      security: []
+      responses:
+        '200':
+          description: Servicio funcionando
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Salud'
+              example:
+                servicio: inventario
+                estado: ok
+components:
+  schemas:
+    Error:
+      type: object
+      required:
+      - error
+      - detalle
+      properties:
+        error:
+          type: string
+          description: Código del error en mayúsculas
+          example: DATOS_INVALIDOS
+        detalle:
+          type: string
+          example: Falta un campo obligatorio
+    Paginacion:
+      type: object
+      properties:
+        pagina:
+          type: integer
+          example: 1
+        porPagina:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 57
+    Salud:
+      type: object
+      properties:
+        servicio:
+          type: string
+        estado:
+          type: string
+          example: ok
+    CategoriaNueva:
+      type: object
+      required:
+      - nombre
+      properties:
+        nombre:
+          type: string
+          example: Cuadernos
+        categoriaPadreId:
+          type: integer
+          nullable: true
+          description: null = categoría principal
+    Categoria:
+      allOf:
+      - $ref: '#/components/schemas/CategoriaNueva'
+      - type: object
+        properties:
+          categoriaId:
+            type: integer
+            example: 8
+          activo:
+            type: boolean
+    ProductoNuevo:
+      type: object
+      required:
+      - codigo
+      - nombre
+      - categoriaId
+      - unidadMedida
+      - precio
+      properties:
+        codigo:
+          type: string
+          example: CUA-100
+        nombre:
+          type: string
+          example: Cuaderno argollado 100 hojas
+        descripcion:
+          type: string
+        categoriaId:
+          type: integer
+          example: 8
+        unidadMedida:
+          type: string
+          example: unidad
+        precio:
+          type: number
+          minimum: 0
+          example: 12500
+        proveedorId:
+          type: integer
+          nullable: true
+          example: 9
+    Producto:
+      allOf:
+      - $ref: '#/components/schemas/ProductoNuevo'
+      - type: object
+        properties:
+          productoId:
+            type: integer
+            example: 105
+          empresaId:
+            type: integer
+            readOnly: true
+          activo:
+            type: boolean
+    BodegaNueva:
+      type: object
+      required:
+      - nombre
+      - localId
+      properties:
+        nombre:
+          type: string
+          example: Bodega principal
+        localId:
+          type: integer
+          description: Local (catálogo de Configuración)
+          example: 1
+    Bodega:
+      allOf:
+      - $ref: '#/components/schemas/BodegaNueva'
+      - type: object
+        properties:
+          bodegaId:
+            type: integer
+            example: 3
+          activo:
+            type: boolean
+    ItemStock:
+      type: object
+      required:
+      - productoId
+      - bodegaId
+      - cantidad
+      properties:
+        productoId:
+          type: integer
+          example: 105
+        bodegaId:
+          type: integer
+          example: 3
+        cantidad:
+          type: integer
+          minimum: 1
+          example: 2
+    StockBodega:
+      type: object
+      properties:
+        productoId:
+          type: integer
+        bodegaId:
+          type: integer
+        localId:
+          type: integer
+        cantidad:
+          type: integer
+          example: 14
+    StockProducto:
+      type: object
+      properties:
+        productoId:
+          type: integer
+          example: 105
+        total:
+          type: integer
+          example: 14
+        porBodega:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockBodega'
+    DescuentoVenta:
+      type: object
+      required:
+      - ventaId
+      - items
+      properties:
+        ventaId:
+          type: integer
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ItemStock'
+    ResultadoDescuento:
+      type: object
+      properties:
+        ventaId:
+          type: integer
+          example: 3021
+        items:
+          type: array
+          items:
+            allOf:
+            - $ref: '#/components/schemas/ItemStock'
+            - type: object
+              properties:
+                precioUnitario:
+                  type: number
+                  example: 12500
+    TipoMovimiento:
+      type: string
+      enum:
+      - entrada
+      - salida
+      - ajuste
+      - traslado
+      - devolucion_cliente
+      - devolucion_proveedor
+      - venta
+      - recepcion_orden
+      description: '`venta` y `recepcion_orden` solo los generan las rutas internas'
+    MovimientoNuevo:
+      type: object
+      required:
+      - tipo
+      - productoId
+      - bodegaId
+      - cantidad
+      - motivo
+      properties:
+        tipo:
+          type: string
+          enum:
+          - entrada
+          - salida
+          - ajuste
+          - traslado
+          - devolucion_cliente
+          - devolucion_proveedor
+        productoId:
+          type: integer
+        bodegaId:
+          type: integer
+        bodegaDestinoId:
+          type: integer
+          description: Solo para traslados
+        cantidad:
+          type: integer
+          description: En ajustes puede ser negativa
+        motivo:
+          type: string
+          maxLength: 200
+        ajustaA:
+          type: integer
+          description: Movimiento que corrige, si es un ajuste (RNF20)
+    Movimiento:
+      type: object
+      properties:
+        movimientoId:
+          type: integer
+          example: 5510
+        tipo:
+          $ref: '#/components/schemas/TipoMovimiento'
+        productoId:
+          type: integer
+        bodegaId:
+          type: integer
+        bodegaDestinoId:
+          type: integer
+          nullable: true
+        cantidad:
+          type: integer
+        saldoResultante:
+          type: integer
+          description: Saldo de la bodega después del movimiento
+        motivo:
+          type: string
+        referencia:
+          type: string
+          nullable: true
+          description: ventaId u ordenId que lo originó
+          example: venta:3021
+        registradoPor:
+          type: string
+          description: usuarioId o nombre del servicio (quién — RF10)
+        fechaHora:
+          type: string
+          format: date-time
+    AlertaStock:
+      type: object
+      properties:
+        productoId:
+          type: integer
+        nombre:
+          type: string
+        stockTotal:
+          type: integer
+          example: 3
+        stockMinimo:
+          type: integer
+          example: 10
+        tipo:
+          type: string
+          enum:
+          - bajo_minimo
+          - agotado
+    ProductoRotacion:
+      type: object
+      properties:
+        productoId:
+          type: integer
+        nombre:
+          type: string
+        unidadesSalidas:
+          type: integer
+    IndicadoresInventario:
+      type: object
+      properties:
+        valorTotal:
+          type: number
+          description: Suma de cantidad × precio
+          example: 15400000
+        cantidadProductos:
+          type: integer
+          example: 230
+        productosAgotados:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertaStock'
+        productosBajoMinimo:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertaStock'
+        mayorRotacion:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductoRotacion'
+        menorRotacion:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductoRotacion'
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token emitido por el API Gateway. Contiene `empresaId`, `usuarioId` y `rol`.
+    servicioOrigen:
+      type: apiKey
+      in: header
+      name: X-Servicio-Origen
+      description: Nombre del microservicio que llama. Solo red interna de Docker (el Gateway no enruta estas llamadas).
+    empresaInterna:
+      type: apiKey
+      in: header
+      name: X-Empresa-Id
+      description: Empresa en nombre de la cual se hace la llamada interna.
+  parameters:
+    Pagina:
+      name: pagina
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PorPagina:
+      name: porPagina
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    FechaDesde:
+      name: fechaDesde
+      in: query
+      schema:
+        type: string
+        format: date
+      example: '2026-10-01'
+    FechaHasta:
+      name: fechaHasta
+      in: query
+      schema:
+        type: string
+        format: date
+      example: '2026-10-31'
+    LocalIdFiltro:
+      name: localId
+      in: query
+      description: Filtra por local
+      schema:
+        type: integer
+      example: 1
+  responses:
+    DatosInvalidos:
+      description: Los datos enviados no son válidos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NoAutenticado:
+      description: Falta el token (o los headers internos) o no es válido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    SinPermiso:
+      description: El rol (o el servicio de origen) no permite esta operación
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NoEncontrado:
+      description: El recurso no existe o pertenece a otra empresa
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflicto:
+      description: La operación choca con el estado actual de los datos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServicioNoDisponible:
+      description: Un servicio del que depende no respondió después de 3 intentos (circuit breaker)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

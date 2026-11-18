@@ -1,0 +1,651 @@
+openapi: 3.0.3
+info:
+  title: JAK Inventory — Microservicio de Balance Diario
+  version: 1.1.0
+  description: |
+    Registra y consolida los ingresos y egresos operativos de cada local y de la
+    tienda web, diferenciando efectivo, tarjeta y QR (RF21, RF22), y genera el
+    balance diario por local y fecha (RF23). No realiza funciones contables.
+
+    **Identificación de la empresa (RNF19):** la empresa nunca llega por la URL.
+    - Peticiones externas (vía API Gateway): `empresaId`, `usuarioId` y `rol` vienen en el JWT.
+    - Peticiones internas (servicio a servicio, sin pasar por el Gateway): headers
+      `X-Servicio-Origen` y `X-Empresa-Id`.
+
+    Todo se filtra por `empresaId`. `empresaId` y `localId` pertenecen a Configuración;
+    este servicio solo guarda sus identificadores.
+
+    **Quién lo llama:**
+    - **Ventas** (interno): `POST /api/balance/movimientos/ventas` para registrar el ingreso de cada venta.
+    - **Reportes y Dashboard** (interno): consultas de balances y movimientos.
+    - **Usuarios** (vía Gateway): movimientos manuales, ajustes y consultas.
+
+    Este servicio no llama a ningún otro.
+
+    **Integridad de los registros (RNF20):** los movimientos NO se editan ni se
+    borran. Un error se corrige con un movimiento de ajuste que referencia al
+    original. Por eso no hay endpoints PUT, PATCH ni DELETE.
+
+    **Roles (del JWT):**
+    - `administrador`: todas las operaciones.
+    - `vendedor`: registrar ingresos y egresos manuales y consultar movimientos y balances.
+    - `tienda_web`, `encargado_bodega`: sin acceso a este servicio.
+
+servers:
+  - url: http://localhost:8080
+    description: A través del API Gateway (peticiones de usuarios)
+  - url: http://balance-service:8000
+    description: Dirección interna en la red de Docker (llamadas entre servicios; ajustar puerto)
+
+tags:
+  - name: Movimientos
+    description: Ingresos y egresos de cada local
+  - name: Balances
+    description: Balance diario y reportes por período
+  - name: Salud
+    description: Estado del servicio (para el Service Discovery)
+
+paths:
+  /api/balance/movimientos:
+    post:
+      tags: [Movimientos]
+      summary: Registrar un ingreso o egreso manual
+      description: |
+        Para movimientos que no vienen de una venta, por ejemplo un pago de
+        domicilio (egreso) o la base de caja (ingreso).
+        Roles: `administrador`, `vendedor`.
+      operationId: registrarMovimiento
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MovimientoNuevo'
+            example:
+              localId: 1
+              tipo: egreso
+              medioPago: efectivo
+              monto: 30000
+              concepto: Pago de domicilio
+      responses:
+        '201':
+          description: Movimiento registrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Movimiento'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+    get:
+      tags: [Movimientos]
+      summary: Listar movimientos con filtros
+      description: |
+        Externo: `administrador`, `vendedor`. Interno: Reportes (`X-Servicio-Origen: reportes`).
+      operationId: listarMovimientos
+      security:
+        - bearerAuth: []
+        - servicioOrigen: []
+          empresaInterna: []
+      parameters:
+        - $ref: '#/components/parameters/LocalId'
+        - name: tipo
+          in: query
+          schema:
+            $ref: '#/components/schemas/TipoMovimiento'
+        - name: origen
+          in: query
+          schema:
+            $ref: '#/components/schemas/Origen'
+        - name: medioPago
+          in: query
+          schema:
+            $ref: '#/components/schemas/MedioPago'
+        - $ref: '#/components/parameters/FechaDesde'
+        - $ref: '#/components/parameters/FechaHasta'
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/PorPagina'
+      responses:
+        '200':
+          description: Lista paginada de movimientos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  datos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Movimiento'
+                  paginacion:
+                    $ref: '#/components/schemas/Paginacion'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/balance/movimientos/ventas:
+    post:
+      tags: [Movimientos]
+      summary: Registrar el ingreso de una venta (ruta interna, la llama Ventas)
+      description: |
+        Ruta interna: NO pasa por el API Gateway. Solo acepta `X-Servicio-Origen: ventas`.
+        Ventas la llama después de confirmar una venta (RF21, RF22).
+
+        Es **idempotente por `ventaId`**: si Ventas reintenta (circuit breaker, hasta
+        3 veces, o el reintento manual del administrador) y el ingreso ya existe,
+        responde 409 y no lo duplica.
+      operationId: registrarIngresoVenta
+      security:
+        - servicioOrigen: []
+          empresaInterna: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngresoVenta'
+            example:
+              ventaId: 3021
+              localId: 2
+              canal: tienda_web
+              medioPago: qr
+              monto: 43000
+              fechaHora: '2026-10-23T15:42:10-05:00'
+      responses:
+        '201':
+          description: Ingreso registrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Movimiento'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          description: El servicio de origen no es `ventas`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: La venta ya tenía su ingreso registrado (no se duplica)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: VENTA_YA_REGISTRADA
+                detalle: El ingreso de la venta 3021 ya fue registrado
+
+  /api/balance/movimientos/{movimientoId}:
+    get:
+      tags: [Movimientos]
+      summary: Consultar un movimiento y sus ajustes
+      description: |
+        Externo: `administrador`, `vendedor`. Interno: Reportes.
+        Si el movimiento pertenece a otra empresa responde 404.
+      operationId: consultarMovimiento
+      security:
+        - bearerAuth: []
+        - servicioOrigen: []
+          empresaInterna: []
+      parameters:
+        - $ref: '#/components/parameters/MovimientoId'
+      responses:
+        '200':
+          description: Detalle del movimiento
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Movimiento'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+  /api/balance/movimientos/{movimientoId}/ajustes:
+    post:
+      tags: [Movimientos]
+      summary: Corregir un movimiento mediante un ajuste
+      description: |
+        Crea un movimiento de tipo ajuste que corrige al original, sin modificarlo
+        (RNF20). El monto puede ser negativo para restar.
+        Rol: `administrador`.
+      operationId: registrarAjuste
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/MovimientoId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AjusteNuevo'
+            example:
+              monto: -5000
+              motivo: El egreso por domicilio era de 25.000, no de 30.000
+      responses:
+        '201':
+          description: Ajuste registrado; el movimiento original se conserva
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Movimiento'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+  /api/balance/diario:
+    get:
+      tags: [Balances]
+      summary: Balance diario de un local
+      description: |
+        Lo que ingresó, lo que salió y el valor disponible en cada medio de pago
+        al finalizar la jornada (RF21, RF23). Incluye los ajustes.
+        Externo: `administrador`, `vendedor`. Interno: Reportes.
+      operationId: balanceDiario
+      security:
+        - bearerAuth: []
+        - servicioOrigen: []
+          empresaInterna: []
+      parameters:
+        - name: localId
+          in: query
+          required: true
+          schema:
+            type: integer
+          example: 1
+        - name: fecha
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          example: '2026-10-23'
+      responses:
+        '200':
+          description: Balance del día
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceDiario'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/balance/reporte:
+    get:
+      tags: [Balances]
+      summary: Reporte de balances por período
+      description: |
+        Un balance por cada día y local del período, filtrable por local y fechas (RF23).
+        Externo: `administrador`. Interno: Reportes.
+      operationId: reporteBalances
+      security:
+        - bearerAuth: []
+        - servicioOrigen: []
+          empresaInterna: []
+      parameters:
+        - $ref: '#/components/parameters/LocalId'
+        - name: fechaDesde
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          example: '2026-10-01'
+        - name: fechaHasta
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          example: '2026-10-23'
+      responses:
+        '200':
+          description: Balances del período
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  fechaDesde:
+                    type: string
+                    format: date
+                  fechaHasta:
+                    type: string
+                    format: date
+                  balances:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BalanceDiario'
+                  totales:
+                    $ref: '#/components/schemas/TotalesPorMedio'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /health:
+    get:
+      tags: [Salud]
+      summary: Estado del servicio
+      description: Lo consulta el Service Discovery. No requiere autenticación.
+      operationId: salud
+      security: []
+      responses:
+        '200':
+          description: Servicio funcionando
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  servicio:
+                    type: string
+                    example: balance-diario
+                  estado:
+                    type: string
+                    example: ok
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token emitido por el API Gateway. Contiene `empresaId`, `usuarioId` y `rol`.
+    servicioOrigen:
+      type: apiKey
+      in: header
+      name: X-Servicio-Origen
+      description: Nombre del microservicio que llama (`ventas` o `reportes`). Solo red interna.
+    empresaInterna:
+      type: apiKey
+      in: header
+      name: X-Empresa-Id
+      description: Empresa en nombre de la cual se hace la llamada interna.
+
+  parameters:
+    MovimientoId:
+      name: movimientoId
+      in: path
+      required: true
+      schema:
+        type: integer
+      example: 880
+    LocalId:
+      name: localId
+      in: query
+      description: Filtra por local
+      schema:
+        type: integer
+      example: 1
+    FechaDesde:
+      name: fechaDesde
+      in: query
+      schema:
+        type: string
+        format: date
+    FechaHasta:
+      name: fechaHasta
+      in: query
+      schema:
+        type: string
+        format: date
+    Pagina:
+      name: pagina
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PorPagina:
+      name: porPagina
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+  schemas:
+    MedioPago:
+      type: string
+      enum: [efectivo, tarjeta, qr]
+
+    TipoMovimiento:
+      type: string
+      enum: [ingreso, egreso, ajuste]
+
+    Origen:
+      type: string
+      enum: [venta, manual, ajuste]
+      description: De dónde salió el movimiento
+
+    Canal:
+      type: string
+      enum: [tienda_fisica, tienda_web]
+
+    MovimientoNuevo:
+      type: object
+      required: [localId, tipo, medioPago, monto, concepto]
+      properties:
+        localId:
+          type: integer
+        tipo:
+          type: string
+          enum: [ingreso, egreso]
+        medioPago:
+          $ref: '#/components/schemas/MedioPago'
+        monto:
+          type: number
+          exclusiveMinimum: true
+          minimum: 0
+          example: 30000
+        concepto:
+          type: string
+          maxLength: 200
+          example: Pago de domicilio
+
+    IngresoVenta:
+      type: object
+      required: [ventaId, localId, canal, medioPago, monto, fechaHora]
+      properties:
+        ventaId:
+          type: integer
+          example: 3021
+        localId:
+          type: integer
+          example: 2
+        canal:
+          $ref: '#/components/schemas/Canal'
+        medioPago:
+          $ref: '#/components/schemas/MedioPago'
+        monto:
+          type: number
+          exclusiveMinimum: true
+          minimum: 0
+          example: 43000
+        fechaHora:
+          type: string
+          format: date-time
+
+    AjusteNuevo:
+      type: object
+      required: [monto, motivo]
+      properties:
+        monto:
+          type: number
+          description: Positivo suma, negativo resta
+          example: -5000
+        motivo:
+          type: string
+          maxLength: 200
+
+    Movimiento:
+      type: object
+      properties:
+        movimientoId:
+          type: integer
+          example: 880
+        empresaId:
+          type: integer
+          readOnly: true
+          example: 4
+        localId:
+          type: integer
+          example: 1
+        tipo:
+          $ref: '#/components/schemas/TipoMovimiento'
+        origen:
+          $ref: '#/components/schemas/Origen'
+        canal:
+          allOf:
+            - $ref: '#/components/schemas/Canal'
+          nullable: true
+          description: Solo para movimientos que vienen de una venta
+        medioPago:
+          $ref: '#/components/schemas/MedioPago'
+        monto:
+          type: number
+          example: 30000
+        concepto:
+          type: string
+          example: Pago de domicilio
+        ventaId:
+          type: integer
+          nullable: true
+          description: Venta que originó el ingreso, si aplica
+        ajustaA:
+          type: integer
+          nullable: true
+          description: Movimiento original que corrige, si es un ajuste
+        ajustes:
+          type: array
+          description: Ajustes posteriores que corrigen este movimiento
+          items:
+            type: integer
+          example: []
+        registradoPor:
+          type: string
+          readOnly: true
+          description: usuarioId del JWT, o el nombre del servicio si fue una llamada interna (RNF20)
+          example: '12'
+        fechaHora:
+          type: string
+          format: date-time
+
+    TotalesPorMedio:
+      type: object
+      properties:
+        efectivo:
+          type: number
+          example: 520000
+        tarjeta:
+          type: number
+          example: 800000
+        qr:
+          type: number
+          example: 350000
+        total:
+          type: number
+          example: 1670000
+
+    BalanceDiario:
+      type: object
+      properties:
+        localId:
+          type: integer
+          example: 1
+        fecha:
+          type: string
+          format: date
+          example: '2026-10-23'
+        ingresos:
+          $ref: '#/components/schemas/TotalesPorMedio'
+        egresos:
+          $ref: '#/components/schemas/TotalesPorMedio'
+        ajustes:
+          $ref: '#/components/schemas/TotalesPorMedio'
+        disponible:
+          description: ingresos − egresos + ajustes, por medio de pago. "efectivo" es el dinero en caja.
+          allOf:
+            - $ref: '#/components/schemas/TotalesPorMedio'
+        ventasPorCanal:
+          type: object
+          properties:
+            tienda_fisica:
+              type: number
+              example: 1100000
+            tienda_web:
+              type: number
+              example: 600000
+
+    Paginacion:
+      type: object
+      properties:
+        pagina:
+          type: integer
+        porPagina:
+          type: integer
+        total:
+          type: integer
+
+    Error:
+      type: object
+      required: [error, detalle]
+      properties:
+        error:
+          type: string
+          example: DATOS_INVALIDOS
+        detalle:
+          type: string
+          example: El monto debe ser mayor que cero
+
+  responses:
+    DatosInvalidos:
+      description: Los datos enviados no son válidos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NoAutenticado:
+      description: Falta el token (o los headers internos) o no es válido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    SinPermiso:
+      description: El rol no permite esta operación
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NoEncontrado:
+      description: El recurso no existe o pertenece a otra empresa
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

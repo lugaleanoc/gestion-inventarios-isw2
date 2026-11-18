@@ -1,0 +1,765 @@
+openapi: 3.0.3
+info:
+  title: JAK Inventory — API Gateway (con autenticación integrada)
+  version: 1.0.0
+  description: |
+    Único punto de entrada al sistema (RNF09). Este contrato documenta SOLO los
+    endpoints propios del Gateway: autenticación, usuarios, roles y tiendas web.
+
+    **Enrutamiento:** toda petición `/api/<servicio>/...` se valida (token y rol) y se
+    reenvía al microservicio correspondiente, que se localiza en el Service Discovery.
+    Los endpoints de cada servicio están en su propio contrato.
+
+    **Rutas internas bloqueadas desde afuera (decisión 7):** el Gateway NO enruta estas
+    rutas; solo se llaman dentro de la red de Docker con `X-Servicio-Origen` y `X-Empresa-Id`:
+    - `POST /api/configuracion/empresas`
+    - `POST /api/inventario/stock/descuentos`
+    - `POST /api/inventario/stock/entradas`
+    - `POST /api/reposicion/solicitudes/automaticas`
+    - `POST /api/balance/movimientos/ventas`
+
+    **Contenido del JWT (decisión 2):** `empresaId`, `usuarioId` y `rol`.
+    La empresa nunca viaja en la URL (RNF19).
+
+    **Roles:** `administrador`, `vendedor`, `encargado_bodega`, `tienda_web`.
+
+    **Seguridad (RNF07):** las contraseñas y claves secretas se guardan con hash
+    (por ejemplo bcrypt), nunca en texto plano.
+
+    **Eliminación (decisión 8):** los usuarios y tiendas web se dan de baja lógica
+    (`activo = false`); no se borran.
+servers:
+- url: http://localhost:8080
+  description: API Gateway (ajustar puerto)
+tags:
+- name: Autenticación
+  description: Inicio de sesión y contraseñas (RF08)
+- name: Usuarios
+  description: Usuarios y roles de la empresa (RF07)
+- name: Tiendas web
+  description: Credenciales de las tiendas web externas
+- name: Empresas
+  description: Registro de una empresa nueva
+- name: Salud
+  description: Estado del servicio
+paths:
+  /api/auth/login:
+    post:
+      tags:
+      - Autenticación
+      summary: Iniciar sesión
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credenciales'
+            example:
+              correo: vendedor@tienda.com
+              contrasena: MiClave123
+      responses:
+        '200':
+          description: Credenciales correctas; se entrega el token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sesion'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          description: Correo o contraseña incorrectos, o usuario inactivo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: CREDENCIALES_INVALIDAS
+                detalle: Correo o contraseña incorrectos
+  /api/auth/logout:
+    post:
+      tags:
+      - Autenticación
+      summary: Cerrar sesión
+      description: Invalida el token actual (queda en lista de tokens revocados hasta que venza).
+      operationId: logout
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: Sesión cerrada
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+  /api/auth/recuperacion:
+    post:
+      tags:
+      - Autenticación
+      summary: Solicitar recuperación de contraseña
+      description: |
+        Genera un código de recuperación temporal. Responde 202 siempre, exista o no
+        el correo, para no revelar qué correos están registrados.
+      operationId: solicitarRecuperacion
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - correo
+              properties:
+                correo:
+                  type: string
+                  format: email
+      responses:
+        '202':
+          description: Si el correo existe, se generó un código de recuperación
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+  /api/auth/restablecimiento:
+    post:
+      tags:
+      - Autenticación
+      summary: Restablecer la contraseña con el código de recuperación
+      operationId: restablecerContrasena
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - codigoRecuperacion
+              - nuevaContrasena
+              properties:
+                codigoRecuperacion:
+                  type: string
+                nuevaContrasena:
+                  type: string
+                  minLength: 8
+      responses:
+        '204':
+          description: Contraseña actualizada
+        '400':
+          description: Código inválido o vencido, o contraseña débil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/auth/contrasena:
+    put:
+      tags:
+      - Autenticación
+      summary: Cambiar la contraseña propia
+      operationId: cambiarContrasena
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - contrasenaActual
+              - nuevaContrasena
+              properties:
+                contrasenaActual:
+                  type: string
+                nuevaContrasena:
+                  type: string
+                  minLength: 8
+      responses:
+        '204':
+          description: Contraseña cambiada
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+  /api/auth/token-tienda:
+    post:
+      tags:
+      - Autenticación
+      summary: Obtener token para una tienda web externa
+      description: La tienda web se autentica como servicio y recibe un token con rol `tienda_web`.
+      operationId: tokenTiendaWeb
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - clienteId
+              - claveSecreta
+              properties:
+                clienteId:
+                  type: string
+                  example: tw_8f2a91
+                claveSecreta:
+                  type: string
+      responses:
+        '200':
+          description: Token emitido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  expiraEn:
+                    type: integer
+                    description: Segundos
+                    example: 3600
+        '401':
+          description: Credenciales inválidas o tienda dada de baja
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/usuarios:
+    get:
+      tags:
+      - Usuarios
+      summary: Listar usuarios de la empresa
+      description: 'Rol: `administrador`.'
+      operationId: listarUsuarios
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: rol
+        in: query
+        schema:
+          $ref: '#/components/schemas/Rol'
+      - name: activo
+        in: query
+        schema:
+          type: boolean
+          default: true
+      - $ref: '#/components/parameters/Pagina'
+      - $ref: '#/components/parameters/PorPagina'
+      responses:
+        '200':
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  datos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Usuario'
+                  paginacion:
+                    $ref: '#/components/schemas/Paginacion'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+    post:
+      tags:
+      - Usuarios
+      summary: Crear un usuario
+      description: 'Rol: `administrador`. El usuario queda en la misma empresa del administrador.'
+      operationId: crearUsuario
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UsuarioNuevo'
+      responses:
+        '201':
+          description: Usuario creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usuario'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '409':
+          description: Ya existe un usuario con ese correo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/usuarios/{usuarioId}:
+    parameters:
+    - name: usuarioId
+      in: path
+      required: true
+      schema:
+        type: integer
+    get:
+      tags:
+      - Usuarios
+      summary: Consultar un usuario
+      description: 'Rol: `administrador`.'
+      operationId: consultarUsuario
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usuario'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    put:
+      tags:
+      - Usuarios
+      summary: Actualizar datos o rol de un usuario
+      description: 'Rol: `administrador`.'
+      operationId: actualizarUsuario
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nombre:
+                  type: string
+                rol:
+                  $ref: '#/components/schemas/Rol'
+      responses:
+        '200':
+          description: Usuario actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usuario'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    delete:
+      tags:
+      - Usuarios
+      summary: Dar de baja un usuario (baja lógica)
+      description: 'Rol: `administrador`. El usuario queda `activo = false` y ya no puede iniciar sesión.'
+      operationId: darBajaUsuario
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Usuario dado de baja
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usuario'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+  /api/tiendas-web:
+    get:
+      tags:
+      - Tiendas web
+      summary: Listar las tiendas web de la empresa
+      description: 'Rol: `administrador`. Nunca devuelve la clave secreta.'
+      operationId: listarTiendasWeb
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Tiendas web
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TiendaWeb'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+    post:
+      tags:
+      - Tiendas web
+      summary: Registrar una tienda web y generar sus credenciales
+      description: 'Rol: `administrador`. La `claveSecreta` se muestra solo en esta respuesta.'
+      operationId: crearTiendaWeb
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - nombre
+              properties:
+                nombre:
+                  type: string
+                  example: Tienda online principal
+      responses:
+        '201':
+          description: Tienda registrada
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/TiendaWeb'
+                - type: object
+                  properties:
+                    claveSecreta:
+                      type: string
+                      description: Se muestra una sola vez
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+  /api/tiendas-web/{tiendaId}:
+    delete:
+      tags:
+      - Tiendas web
+      summary: Dar de baja una tienda web (revoca sus credenciales)
+      description: 'Rol: `administrador`. Baja lógica.'
+      operationId: darBajaTiendaWeb
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: tiendaId
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Tienda dada de baja
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TiendaWeb'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+  /api/empresas/registro:
+    post:
+      tags:
+      - Empresas
+      summary: Registrar una empresa nueva con su primer administrador
+      description: |
+        Público (sin token). El Gateway llama a Configuración
+        (`POST /api/configuracion/empresas`, ruta interna) para crear la empresa y
+        luego crea el usuario administrador con el `empresaId` recibido.
+      operationId: registrarEmpresa
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - nombreEmpresa
+              - nit
+              - administrador
+              properties:
+                nombreEmpresa:
+                  type: string
+                  example: Papelería La Estrella
+                nit:
+                  type: string
+                  example: 900123456-7
+                administrador:
+                  type: object
+                  required:
+                  - nombre
+                  - correo
+                  - contrasena
+                  properties:
+                    nombre:
+                      type: string
+                    correo:
+                      type: string
+                      format: email
+                    contrasena:
+                      type: string
+                      minLength: 8
+      responses:
+        '201':
+          description: Empresa y administrador creados
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  empresaId:
+                    type: integer
+                    example: 4
+                  usuarioId:
+                    type: integer
+                    example: 1
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '409':
+          description: El NIT o el correo ya están registrados
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
+  /health:
+    get:
+      tags:
+      - Salud
+      summary: Estado del servicio
+      description: Lo consulta el Service Discovery (y Docker) para saber si el servicio está vivo. No requiere autenticación.
+      operationId: salud
+      security: []
+      responses:
+        '200':
+          description: Servicio funcionando
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Salud'
+              example:
+                servicio: api-gateway
+                estado: ok
+components:
+  schemas:
+    Error:
+      type: object
+      required:
+      - error
+      - detalle
+      properties:
+        error:
+          type: string
+          description: Código del error en mayúsculas
+          example: DATOS_INVALIDOS
+        detalle:
+          type: string
+          example: Falta un campo obligatorio
+    Paginacion:
+      type: object
+      properties:
+        pagina:
+          type: integer
+          example: 1
+        porPagina:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 57
+    Salud:
+      type: object
+      properties:
+        servicio:
+          type: string
+        estado:
+          type: string
+          example: ok
+    Rol:
+      type: string
+      enum:
+      - administrador
+      - vendedor
+      - encargado_bodega
+      - tienda_web
+    Credenciales:
+      type: object
+      required:
+      - correo
+      - contrasena
+      properties:
+        correo:
+          type: string
+          format: email
+        contrasena:
+          type: string
+    Sesion:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT con empresaId, usuarioId y rol
+        expiraEn:
+          type: integer
+          description: Segundos
+          example: 3600
+        usuario:
+          $ref: '#/components/schemas/Usuario'
+    UsuarioNuevo:
+      type: object
+      required:
+      - nombre
+      - correo
+      - contrasena
+      - rol
+      properties:
+        nombre:
+          type: string
+          example: Laura Gómez
+        correo:
+          type: string
+          format: email
+        contrasena:
+          type: string
+          minLength: 8
+        rol:
+          type: string
+          enum:
+          - administrador
+          - vendedor
+          - encargado_bodega
+    Usuario:
+      type: object
+      properties:
+        usuarioId:
+          type: integer
+          example: 12
+        empresaId:
+          type: integer
+          readOnly: true
+          example: 4
+        nombre:
+          type: string
+          example: Laura Gómez
+        correo:
+          type: string
+          format: email
+        rol:
+          $ref: '#/components/schemas/Rol'
+        activo:
+          type: boolean
+          example: true
+    TiendaWeb:
+      type: object
+      properties:
+        tiendaId:
+          type: integer
+          example: 2
+        nombre:
+          type: string
+        clienteId:
+          type: string
+          example: tw_8f2a91
+        activo:
+          type: boolean
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token emitido por el API Gateway. Contiene `empresaId`, `usuarioId` y `rol`.
+    servicioOrigen:
+      type: apiKey
+      in: header
+      name: X-Servicio-Origen
+      description: Nombre del microservicio que llama. Solo red interna de Docker (el Gateway no enruta estas llamadas).
+    empresaInterna:
+      type: apiKey
+      in: header
+      name: X-Empresa-Id
+      description: Empresa en nombre de la cual se hace la llamada interna.
+  parameters:
+    Pagina:
+      name: pagina
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PorPagina:
+      name: porPagina
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    FechaDesde:
+      name: fechaDesde
+      in: query
+      schema:
+        type: string
+        format: date
+      example: '2026-10-01'
+    FechaHasta:
+      name: fechaHasta
+      in: query
+      schema:
+        type: string
+        format: date
+      example: '2026-10-31'
+    LocalIdFiltro:
+      name: localId
+      in: query
+      description: Filtra por local
+      schema:
+        type: integer
+      example: 1
+  responses:
+    DatosInvalidos:
+      description: Los datos enviados no son válidos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NoAutenticado:
+      description: Falta el token (o los headers internos) o no es válido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    SinPermiso:
+      description: El rol (o el servicio de origen) no permite esta operación
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NoEncontrado:
+      description: El recurso no existe o pertenece a otra empresa
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflicto:
+      description: La operación choca con el estado actual de los datos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServicioNoDisponible:
+      description: Un servicio del que depende no respondió después de 3 intentos (circuit breaker)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

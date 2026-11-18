@@ -1,0 +1,512 @@
+openapi: 3.0.3
+info:
+  title: JAK Inventory — Microservicio de Reportes y Dashboard
+  version: 1.0.0
+  description: |
+    Presenta de forma visual la información de los demás servicios (RF11, RF14,
+    RF23, RF24, RF25). No tiene datos propios del negocio: los consulta y los guarda
+    en una caché para no llamar a los demás servicios en cada petición.
+
+    **A quién llama (REST interno con `X-Servicio-Origen: reportes`, circuit breaker, hasta 3 reintentos):**
+    - **Configuración**: métricas elegidas por la empresa.
+    - **Ventas**: `GET /api/ventas/resumen`.
+    - **Inventario**: `GET /api/inventario/indicadores`.
+    - **Reposición**: `GET /api/reposicion/resumen` y solicitudes.
+    - **Balance Diario**: `GET /api/balance/diario` y `/api/balance/reporte`.
+
+    **Aislamiento de fallos (RNF18):** si un servicio no responde, el reporte se
+    entrega igual con los datos disponibles (o los de la caché) y lo indica en
+    `fuentesNoDisponibles`. Una caída de Reportes no afecta a los demás servicios.
+
+    Nadie llama a este servicio internamente; solo los usuarios vía Gateway.
+
+    **Roles:** `administrador` todo; `encargado_bodega` reportes de inventario y
+    reposición; `vendedor` ventas y balance.
+servers:
+- url: http://localhost:8080
+  description: A través del API Gateway
+- url: http://reportes-service:8000
+  description: Dirección interna en la red de Docker (ajustar puerto)
+tags:
+- name: Dashboard
+  description: Panel personalizado por empresa (RF28)
+- name: Reportes
+  description: Reportes individuales
+- name: Salud
+  description: Estado del servicio
+paths:
+  /api/reportes/dashboard:
+    get:
+      tags:
+      - Dashboard
+      summary: Dashboard con las métricas elegidas por la empresa
+      description: Consulta a Configuración qué métricas mostrar y arma solo esas.
+      operationId: dashboard
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/LocalIdFiltro'
+      - $ref: '#/components/parameters/Refrescar'
+      responses:
+        '200':
+          description: Dashboard
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Meta'
+                - type: object
+                  properties:
+                    metricas:
+                      type: object
+                      description: Una entrada por cada métrica elegida en Configuración
+                      additionalProperties: true
+                      example:
+                        ventas_por_canal:
+                          tienda_fisica: 1200000
+                          tienda_web: 650000
+                        productos_agotados: 3
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+  /api/reportes/ventas-por-canal:
+    get:
+      tags:
+      - Reportes
+      summary: Ventas por canal y medio de pago (RF24)
+      description: 'Roles: `administrador`, `vendedor`.'
+      operationId: reporteVentasPorCanal
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/LocalIdFiltro'
+      - $ref: '#/components/parameters/FechaDesde'
+      - $ref: '#/components/parameters/FechaHasta'
+      - $ref: '#/components/parameters/Refrescar'
+      responses:
+        '200':
+          description: Reporte
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Meta'
+                - type: object
+                  properties:
+                    porCanal:
+                      type: object
+                      properties:
+                        tienda_fisica:
+                          type: number
+                        tienda_web:
+                          type: number
+                    porMedioPago:
+                      type: object
+                      properties:
+                        efectivo:
+                          type: number
+                        tarjeta:
+                          type: number
+                        qr:
+                          type: number
+                    totalVentas:
+                      type: number
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+  /api/reportes/inventario:
+    get:
+      tags:
+      - Reportes
+      summary: Existencias, valor del inventario y rotación (RF11, RF14)
+      description: 'Roles: `administrador`, `encargado_bodega`.'
+      operationId: reporteInventario
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/LocalIdFiltro'
+      - $ref: '#/components/parameters/FechaDesde'
+      - $ref: '#/components/parameters/FechaHasta'
+      - $ref: '#/components/parameters/Refrescar'
+      responses:
+        '200':
+          description: Reporte
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Meta'
+                - type: object
+                  properties:
+                    valorTotal:
+                      type: number
+                    cantidadProductos:
+                      type: integer
+                    mayorRotacion:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/ProductoReporte'
+                    menorRotacion:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/ProductoReporte'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+  /api/reportes/productos-agotados:
+    get:
+      tags:
+      - Reportes
+      summary: Productos agotados o bajo el mínimo (RF24)
+      description: 'Roles: `administrador`, `encargado_bodega`.'
+      operationId: reporteAgotados
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Refrescar'
+      responses:
+        '200':
+          description: Reporte
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Meta'
+                - type: object
+                  properties:
+                    agotados:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/ProductoReporte'
+                    bajoMinimo:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/ProductoReporte'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+  /api/reportes/reposiciones:
+    get:
+      tags:
+      - Reportes
+      summary: Estado de las reposiciones (RF24)
+      description: 'Roles: `administrador`, `encargado_bodega`.'
+      operationId: reporteReposiciones
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Refrescar'
+      responses:
+        '200':
+          description: Reporte
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Meta'
+                - type: object
+                  properties:
+                    porEstado:
+                      type: object
+                      properties:
+                        pendiente:
+                          type: integer
+                        aprobada:
+                          type: integer
+                        en_orden:
+                          type: integer
+                        recibida:
+                          type: integer
+                        rechazada:
+                          type: integer
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+  /api/reportes/balance:
+    get:
+      tags:
+      - Reportes
+      summary: Ingresos, egresos y disponible por medio de pago (RF23)
+      description: 'Roles: `administrador`, `vendedor`.'
+      operationId: reporteBalance
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/LocalIdFiltro'
+      - $ref: '#/components/parameters/FechaDesde'
+      - $ref: '#/components/parameters/FechaHasta'
+      - $ref: '#/components/parameters/Refrescar'
+      responses:
+        '200':
+          description: Reporte
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Meta'
+                - type: object
+                  properties:
+                    ingresos:
+                      $ref: '#/components/schemas/TotalesPorMedio'
+                    egresos:
+                      $ref: '#/components/schemas/TotalesPorMedio'
+                    disponible:
+                      $ref: '#/components/schemas/TotalesPorMedio'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+  /api/reportes/locales/{localId}:
+    get:
+      tags:
+      - Reportes
+      summary: Información consolidada de un local (RF25)
+      description: 'Rol: `administrador`. Une inventario, ventas y balance del local.'
+      operationId: reporteLocal
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: localId
+        in: path
+        required: true
+        schema:
+          type: integer
+      - $ref: '#/components/parameters/FechaDesde'
+      - $ref: '#/components/parameters/FechaHasta'
+      - $ref: '#/components/parameters/Refrescar'
+      responses:
+        '200':
+          description: Reporte del local
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Meta'
+                - type: object
+                  properties:
+                    localId:
+                      type: integer
+                    inventario:
+                      type: object
+                      properties:
+                        valorTotal:
+                          type: number
+                        productosAgotados:
+                          type: integer
+                    ventas:
+                      type: object
+                      properties:
+                        totalVentas:
+                          type: number
+                        cantidadVentas:
+                          type: integer
+                    balance:
+                      type: object
+                      properties:
+                        ingresos:
+                          type: number
+                        egresos:
+                          type: number
+                        disponible:
+                          type: number
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+  /health:
+    get:
+      tags:
+      - Salud
+      summary: Estado del servicio
+      description: Lo consulta el Service Discovery (y Docker) para saber si el servicio está vivo. No requiere autenticación.
+      operationId: salud
+      security: []
+      responses:
+        '200':
+          description: Servicio funcionando
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Salud'
+              example:
+                servicio: reportes
+                estado: ok
+components:
+  parameters:
+    Pagina:
+      name: pagina
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PorPagina:
+      name: porPagina
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    FechaDesde:
+      name: fechaDesde
+      in: query
+      schema:
+        type: string
+        format: date
+      example: '2026-10-01'
+    FechaHasta:
+      name: fechaHasta
+      in: query
+      schema:
+        type: string
+        format: date
+      example: '2026-10-31'
+    LocalIdFiltro:
+      name: localId
+      in: query
+      description: Filtra por local
+      schema:
+        type: integer
+      example: 1
+    Refrescar:
+      name: refrescar
+      in: query
+      description: true = ignorar la caché y consultar de nuevo a los servicios
+      schema:
+        type: boolean
+        default: false
+  schemas:
+    Error:
+      type: object
+      required:
+      - error
+      - detalle
+      properties:
+        error:
+          type: string
+          description: Código del error en mayúsculas
+          example: DATOS_INVALIDOS
+        detalle:
+          type: string
+          example: Falta un campo obligatorio
+    Paginacion:
+      type: object
+      properties:
+        pagina:
+          type: integer
+          example: 1
+        porPagina:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 57
+    Salud:
+      type: object
+      properties:
+        servicio:
+          type: string
+        estado:
+          type: string
+          example: ok
+    Meta:
+      type: object
+      properties:
+        generadoEn:
+          type: string
+          format: date-time
+        desdeCache:
+          type: boolean
+          description: true si los datos salieron de la caché
+        fuentesNoDisponibles:
+          type: array
+          description: Servicios que no respondieron; su parte del reporte puede venir vacía o de la caché (RNF18)
+          items:
+            type: string
+            enum:
+            - configuracion
+            - ventas
+            - inventario
+            - reposicion
+            - balance
+          example: []
+    ProductoReporte:
+      type: object
+      properties:
+        productoId:
+          type: integer
+        nombre:
+          type: string
+        valor:
+          type: number
+          description: Stock o unidades vendidas, según el reporte
+    TotalesPorMedio:
+      type: object
+      properties:
+        efectivo:
+          type: number
+        tarjeta:
+          type: number
+        qr:
+          type: number
+        total:
+          type: number
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token emitido por el API Gateway. Contiene `empresaId`, `usuarioId` y `rol`.
+    servicioOrigen:
+      type: apiKey
+      in: header
+      name: X-Servicio-Origen
+      description: Nombre del microservicio que llama. Solo red interna de Docker (el Gateway no enruta estas llamadas).
+    empresaInterna:
+      type: apiKey
+      in: header
+      name: X-Empresa-Id
+      description: Empresa en nombre de la cual se hace la llamada interna.
+  responses:
+    DatosInvalidos:
+      description: Los datos enviados no son válidos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NoAutenticado:
+      description: Falta el token (o los headers internos) o no es válido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    SinPermiso:
+      description: El rol (o el servicio de origen) no permite esta operación
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NoEncontrado:
+      description: El recurso no existe o pertenece a otra empresa
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflicto:
+      description: La operación choca con el estado actual de los datos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServicioNoDisponible:
+      description: Un servicio del que depende no respondió después de 3 intentos (circuit breaker)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
