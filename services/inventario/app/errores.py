@@ -45,10 +45,15 @@ class DatosInvalidos(ErrorAPI):
 
 
 class NoAutenticado(ErrorAPI):
-    """401 - No llegaron los datos de identidad del Gateway."""
+    """401 - No llegaron las cabeceras de identidad que pone el Gateway.
+
+    El codigo es FALTAN_HEADERS, acordado por el equipo: como ningun
+    servicio valida el token, el unico fallo de autenticacion posible
+    aqui es que falten las cabeceras.
+    """
 
     codigo_http = 401
-    error = "NO_AUTENTICADO"
+    error = "FALTAN_HEADERS"
 
 
 class SinPermiso(ErrorAPI):
