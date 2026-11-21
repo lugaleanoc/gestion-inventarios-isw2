@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: JAK Inventory — Microservicio de Reposición
-  version: 1.0.0
+  version: 1.1.0
   description: |
     Detecta necesidades de abastecimiento y gestiona solicitudes y órdenes de
     reposición a proveedores (RF06, RF18, RF19, RF20).
@@ -28,7 +28,7 @@ servers:
 - url: http://localhost:8080
   description: A través del API Gateway
 - url: http://reposicion-service:8000
-  description: Dirección interna en la red de Docker (ajustar puerto)
+  description: Dirección interna en la red de Docker
 tags:
 - name: Solicitudes
   description: Solicitudes de reposición
@@ -52,7 +52,7 @@ paths:
       operationId: crearSolicitudAutomatica
       security:
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       requestBody:
         required: true
         content:
@@ -94,9 +94,11 @@ paths:
       summary: Listar solicitudes y su estado (RF19)
       operationId: listarSolicitudes
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       parameters:
       - name: estado
         in: query
@@ -140,7 +142,9 @@ paths:
       description: 'Roles: `administrador`, `encargado_bodega`. Responde 409 si ya hay una abierta para el producto.'
       operationId: crearSolicitudManual
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       requestBody:
         required: true
         content:
@@ -184,9 +188,11 @@ paths:
       summary: Consultar una solicitud
       operationId: consultarSolicitud
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       parameters:
       - $ref: '#/components/parameters/SolicitudId'
       responses:
@@ -206,7 +212,9 @@ paths:
       description: 'Rol: `administrador`. Solo para solicitudes `pendiente`.'
       operationId: aprobarSolicitud
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       parameters:
       - $ref: '#/components/parameters/SolicitudId'
       requestBody:
@@ -240,7 +248,9 @@ paths:
       description: 'Rol: `administrador`.'
       operationId: rechazarSolicitud
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       parameters:
       - $ref: '#/components/parameters/SolicitudId'
       requestBody:
@@ -274,9 +284,11 @@ paths:
       summary: Listar órdenes de compra
       operationId: listarOrdenes
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       parameters:
       - name: estado
         in: query
@@ -311,7 +323,9 @@ paths:
       description: 'Rol: `administrador`. La solicitud pasa a `en_orden`.'
       operationId: crearOrden
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       requestBody:
         required: true
         content:
@@ -351,9 +365,11 @@ paths:
       summary: Consultar una orden
       operationId: consultarOrden
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       parameters:
       - $ref: '#/components/parameters/OrdenId'
       responses:
@@ -377,7 +393,9 @@ paths:
         porque Inventario no suma dos veces la misma orden.
       operationId: registrarRecepcion
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       parameters:
       - $ref: '#/components/parameters/OrdenId'
       requestBody:
@@ -422,7 +440,9 @@ paths:
       description: 'Rol: `administrador`. La solicitud vuelve a `aprobada`.'
       operationId: cancelarOrden
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       parameters:
       - $ref: '#/components/parameters/OrdenId'
       requestBody:
@@ -456,9 +476,11 @@ paths:
       summary: Cantidad de solicitudes por estado (para el dashboard, RF24)
       operationId: resumenReposiciones
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       responses:
         '200':
           description: Conteo por estado
@@ -685,21 +707,28 @@ components:
             recibidaPor:
               type: integer
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: Token emitido por el API Gateway. Contiene `empresaId`, `usuarioId` y `rol`.
+    # El token JWT lo valida UNICAMENTE el API Gateway. Despues de
+    # validarlo reenvia la peticion con estas tres cabeceras, sin el token.
+    empresa:
+      type: apiKey
+      in: header
+      name: X-Empresa-Id
+      description: Empresa de quien hace la peticion. La pone el Gateway a partir del token.
+    usuario:
+      type: apiKey
+      in: header
+      name: X-Usuario-Id
+      description: Usuario que hace la peticion. La pone el Gateway a partir del token.
+    rol:
+      type: apiKey
+      in: header
+      name: X-Rol
+      description: Rol del usuario. La pone el Gateway a partir del token.
     servicioOrigen:
       type: apiKey
       in: header
       name: X-Servicio-Origen
       description: Nombre del microservicio que llama. Solo red interna de Docker (el Gateway no enruta estas llamadas).
-    empresaInterna:
-      type: apiKey
-      in: header
-      name: X-Empresa-Id
-      description: Empresa en nombre de la cual se hace la llamada interna.
   responses:
     DatosInvalidos:
       description: Los datos enviados no son válidos
@@ -708,7 +737,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     NoAutenticado:
-      description: Falta el token (o los headers internos) o no es válido
+      description: Faltan las cabeceras de identidad que pone el Gateway (FALTAN_HEADERS)
       content:
         application/json:
           schema:
