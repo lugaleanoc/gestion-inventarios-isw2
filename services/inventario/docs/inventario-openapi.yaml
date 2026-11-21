@@ -1,12 +1,12 @@
 openapi: 3.0.3
 info:
   title: JAK Inventory — Microservicio de Inventario
-  version: 1.0.0
+  version: 1.1.0
   description: |
     Administra productos, categorías y bodegas, y controla las existencias de cada
     local (RF01, RF02, RF04, RF05). Mantiene el kardex (RF10).
 
-    **Identificación de la empresa:** del JWT (vía Gateway) o de `X-Empresa-Id` (llamadas internas).
+    **Identificación de la empresa:** siempre de la cabecera `X-Empresa-Id`. El token JWT lo valida el API Gateway y no llega hasta aquí.
 
     **Quién lo llama:**
     - **Ventas** (interno): descuenta stock (`POST /api/inventario/stock/descuentos`) y consulta bodegas.
@@ -30,7 +30,7 @@ servers:
 - url: http://localhost:8080
   description: A través del API Gateway
 - url: http://inventario-service:8000
-  description: Dirección interna en la red de Docker (ajustar puerto)
+  description: Dirección interna en la red de Docker
 tags:
 - name: Categorías
   description: Categorías y subcategorías (RF02)
@@ -54,9 +54,11 @@ paths:
       summary: Listar categorías
       operationId: listarCategorias
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       parameters:
       - name: categoriaPadreId
         in: query
@@ -86,7 +88,9 @@ paths:
       description: 'Roles: `administrador`, `encargado_bodega`.'
       operationId: crearCategoria
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       requestBody:
         required: true
         content:
@@ -119,7 +123,9 @@ paths:
       summary: Consultar una categoría
       operationId: consultarCategoria
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       responses:
         '200':
           description: Categoría
@@ -136,7 +142,9 @@ paths:
       description: 'Roles: `administrador`, `encargado_bodega`.'
       operationId: actualizarCategoria
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       requestBody:
         required: true
         content:
@@ -163,7 +171,9 @@ paths:
       description: 'Rol: `administrador`. Responde 409 si tiene productos activos.'
       operationId: darBajaCategoria
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       responses:
         '200':
           description: Categoría dada de baja
@@ -184,9 +194,11 @@ paths:
       summary: Buscar y filtrar productos (RF12)
       operationId: listarProductos
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       parameters:
       - name: q
         in: query
@@ -233,7 +245,9 @@ paths:
         Si se envía `proveedorId`, se valida con Proveedores que exista (decisión 6).
       operationId: crearProducto
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       requestBody:
         required: true
         content:
@@ -282,9 +296,11 @@ paths:
       summary: Consultar un producto
       operationId: consultarProducto
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       responses:
         '200':
           description: Producto
@@ -301,7 +317,9 @@ paths:
       description: 'Roles: `administrador`, `encargado_bodega`.'
       operationId: actualizarProducto
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       requestBody:
         required: true
         content:
@@ -328,7 +346,9 @@ paths:
       description: 'Rol: `administrador`. El kardex y las ventas que lo referencian se conservan.'
       operationId: darBajaProducto
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       responses:
         '200':
           description: Producto dado de baja
@@ -347,9 +367,11 @@ paths:
       summary: Listar bodegas (Ventas la usa con `localId` para elegir bodega)
       operationId: listarBodegas
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       parameters:
       - $ref: '#/components/parameters/LocalIdFiltro'
       - name: activo
@@ -375,7 +397,9 @@ paths:
       description: 'Rol: `administrador`.'
       operationId: crearBodega
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       requestBody:
         required: true
         content:
@@ -406,9 +430,11 @@ paths:
       summary: Consultar una bodega
       operationId: consultarBodega
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       responses:
         '200':
           description: Bodega
@@ -425,7 +451,9 @@ paths:
       description: 'Rol: `administrador`.'
       operationId: actualizarBodega
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       requestBody:
         required: true
         content:
@@ -450,7 +478,9 @@ paths:
       description: 'Rol: `administrador`. Responde 409 si todavía tiene existencias.'
       operationId: darBajaBodega
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       responses:
         '200':
           description: Bodega dada de baja
@@ -471,9 +501,11 @@ paths:
       summary: Consultar existencias por bodega
       operationId: consultarStock
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       parameters:
       - name: productoId
         in: query
@@ -510,9 +542,11 @@ paths:
       description: Devuelve el total (suma de bodegas, decisión 4) y el detalle por bodega.
       operationId: stockProducto
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       parameters:
       - name: productoId
         in: path
@@ -546,7 +580,7 @@ paths:
       operationId: descontarStock
       security:
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       requestBody:
         required: true
         content:
@@ -593,7 +627,7 @@ paths:
       operationId: registrarEntradaReposicion
       security:
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       requestBody:
         required: true
         content:
@@ -638,9 +672,11 @@ paths:
       summary: Kardex — histórico de movimientos (RF10)
       operationId: listarMovimientos
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       parameters:
       - name: productoId
         in: query
@@ -684,7 +720,9 @@ paths:
         `bodegaDestinoId`) y devoluciones de cliente o a proveedor (RF13).
       operationId: registrarMovimiento
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       requestBody:
         required: true
         content:
@@ -725,7 +763,9 @@ paths:
         resultados si la alerta está activa en Configuración.
       operationId: listarAlertas
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       responses:
         '200':
           description: Productos en alerta
@@ -747,9 +787,11 @@ paths:
       description: 'Externo: `administrador`, `encargado_bodega`. Interno: Reportes.'
       operationId: indicadoresInventario
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       parameters:
       - $ref: '#/components/parameters/LocalIdFiltro'
       - $ref: '#/components/parameters/FechaDesde'
@@ -1111,21 +1153,28 @@ components:
           items:
             $ref: '#/components/schemas/ProductoRotacion'
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: Token emitido por el API Gateway. Contiene `empresaId`, `usuarioId` y `rol`.
+    # El token JWT lo valida UNICAMENTE el API Gateway. Despues de
+    # validarlo reenvia la peticion con estas tres cabeceras, sin el token.
+    empresa:
+      type: apiKey
+      in: header
+      name: X-Empresa-Id
+      description: Empresa de quien hace la peticion. La pone el Gateway a partir del token.
+    usuario:
+      type: apiKey
+      in: header
+      name: X-Usuario-Id
+      description: Usuario que hace la peticion. La pone el Gateway a partir del token.
+    rol:
+      type: apiKey
+      in: header
+      name: X-Rol
+      description: Rol del usuario. La pone el Gateway a partir del token.
     servicioOrigen:
       type: apiKey
       in: header
       name: X-Servicio-Origen
       description: Nombre del microservicio que llama. Solo red interna de Docker (el Gateway no enruta estas llamadas).
-    empresaInterna:
-      type: apiKey
-      in: header
-      name: X-Empresa-Id
-      description: Empresa en nombre de la cual se hace la llamada interna.
   parameters:
     Pagina:
       name: pagina
@@ -1171,7 +1220,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     NoAutenticado:
-      description: Falta el token (o los headers internos) o no es válido
+      description: Faltan las cabeceras de identidad que pone el Gateway (FALTAN_HEADERS)
       content:
         application/json:
           schema:
