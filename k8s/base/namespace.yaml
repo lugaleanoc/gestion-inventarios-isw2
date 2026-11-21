@@ -1,6 +1,0 @@
-# Namespace: separa los objetos de este proyecto del resto del cluster.
-# Todo lo del sistema se despliega aqui dentro.
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: jak-inventory
