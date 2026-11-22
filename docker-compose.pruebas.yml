@@ -1,0 +1,42 @@
+# Archivo de apoyo SOLO para las pruebas de rendimiento.
+#
+# El docker-compose.yml principal no publica ningun puerto: al sistema se
+# entra unicamente por el API Gateway (RNF09). Pero Locust corre fuera de
+# Docker, en el computador, y necesita alcanzar los servicios para poder
+# medirlos uno por uno.
+#
+# Este archivo vuelve a abrir esos puertos, y solo se usa cuando se esta
+# midiendo. Docker Compose junta los dos archivos: lo que esta aqui se
+# suma a lo del principal, sin modificarlo.
+#
+#   # levantar para medir
+#   docker compose -f docker-compose.yml -f docker-compose.pruebas.yml up -d inventario reposicion
+#
+#   # volver a la configuracion normal, sin puertos
+#   docker compose down
+#   docker compose up -d
+#
+# Por que no medir a traves del Gateway: porque entonces se estarian
+# midiendo dos servicios a la vez y no se sabria cual es el lento. Se mide
+# una pieza a la vez. La prueba del sistema completo por el Gateway es
+# otra, y corresponde a la Entrega 4.
+
+services:
+
+  inventario:
+    ports:
+      - "8001:8000"
+
+  reposicion:
+    ports:
+      - "8002:8000"
+
+  # Las bases tambien se abren, por si hay que revisar algo con un cliente
+  # de MySQL mientras se analizan los resultados.
+  inventario-db:
+    ports:
+      - "3307:3306"
+
+  reposicion-db:
+    ports:
+      - "3308:3306"
