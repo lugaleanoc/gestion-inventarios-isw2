@@ -5,8 +5,8 @@
 #
 # Un archivo puede contener varios objetos separados por "---".
 ---
-# ConfigMap: configuracion que NO es secreta. Se monta como variables de
-# entorno dentro del contenedor, asi la imagen no lleva nada fijo.
+# ConfigMap: configuracion que NO es secreta. Se monta como 
+# variables de entorno dentro del contenedor, asi la imagen no lleva nada fijo.
 apiVersion: v1
 kind: ConfigMap
 metadata:
