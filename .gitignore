@@ -7,9 +7,6 @@ venv/
 # Configuracion local con claves: nunca se sube al repositorio
 .env
 
-# Resultados de las pruebas de rendimiento
-perf-tests/**/resultados/
-
 # Sistema operativo y editores
 .DS_Store
 Thumbs.db
