@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+tests/
+.env
+venv/
+.venv/
+*.db
+README.md
+docker-compose.snippet.yml
