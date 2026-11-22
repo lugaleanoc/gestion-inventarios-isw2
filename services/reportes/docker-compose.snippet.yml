@@ -1,0 +1,29 @@
+  reportes-db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root_pass
+      MYSQL_DATABASE: reportes_db
+      MYSQL_USER: reportes
+      MYSQL_PASSWORD: reportes_pass
+    volumes:
+      - reportes_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot_pass"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  reportes-service:
+    build: ./services/reportes
+    environment:
+      DB_HOST: reportes-db
+      DB_PORT: "3306"
+      DB_NAME: reportes_db
+      DB_USER: reportes
+      DB_PASSWORD: reportes_pass
+    depends_on:
+      reportes-db:
+        condition: service_healthy
+
+# En la sección volumes: del archivo agregar
+#   reportes_data:
