@@ -8,3 +8,4 @@ python-dotenv==1.0.1         # Lee el archivo .env con las variables de entorno 
 requests==2.32.3             # Cliente HTTP para llamar a los otros microservicios (REST)
 gunicorn==22.0.0             # Servidor de produccion: es el que se ejecuta dentro del contenedor
 flasgger==0.9.7.1            # Publica el contrato OpenAPI como pagina de Swagger en /docs
+cryptography==50.0.2

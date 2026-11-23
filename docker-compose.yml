@@ -1,3 +1,19 @@
+# Entorno de desarrollo local (el enunciado permite compose solo para esto).
+#
+# NINGUN servicio publica puertos hacia afuera: al sistema solo se entra
+# por el API Gateway (RNF09). Los servicios se hablan entre si por la red
+# interna, llamandose por su nombre.
+#
+# Para medir rendimiento hacen falta los puertos abiertos; para eso esta
+# docker-compose.pruebas.yml, que los agrega solo mientras se mide.
+#
+#   docker compose up inventario            levanta Inventario y su MySQL
+#   docker compose logs -f inventario       ver los logs
+#   docker compose down                     apagar todo
+#
+# Cada integrante agrega aqui el bloque de sus servicios. Mantiene el
+# archivo Jasmin, segun el reparto de la Entrega 3.
+
 services:
 
   # ---------------------------------------------------------------
@@ -13,10 +29,6 @@ services:
       MYSQL_DATABASE: inventario_db
       MYSQL_USER: inventario
       MYSQL_PASSWORD: inventario
-    ports:
-      # Se expone en un puerto distinto por servicio para poder tener las
-      # ocho bases levantadas a la vez sin que choquen.
-      - "3307:3306"
     volumes:
       # Volumen con nombre: los datos sobreviven a  docker compose down.
       - datos-inventario:/var/lib/mysql
@@ -43,8 +55,6 @@ services:
       PROVEEDORES_URL: http://proveedores-service:8000
       REPOSICION_URL: http://reposicion-service:8000
       STOCK_MINIMO_POR_DEFECTO: 5
-    ports:
-      - "8001:8000"
     depends_on:
       inventario-db:
         condition: service_healthy  # espera a que la base este lista
@@ -60,8 +70,6 @@ services:
       MYSQL_DATABASE: reposicion_db
       MYSQL_USER: reposicion
       MYSQL_PASSWORD: reposicion
-    ports:
-      - "3308:3306"
     volumes:
       - datos-reposicion:/var/lib/mysql
     healthcheck:
@@ -86,8 +94,6 @@ services:
       CONFIGURACION_URL: http://configuracion-service:8000
       STOCK_MINIMO_POR_DEFECTO: 5
       FACTOR_REPOSICION: 3
-    ports:
-      - "8002:8000"
     depends_on:
       reposicion-db:
         condition: service_healthy
