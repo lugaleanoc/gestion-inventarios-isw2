@@ -1,0 +1,5 @@
+# Solo para las pruebas de rendimiento, no va en la imagen de ningun servicio.
+#   pip install -r requirements.txt
+locust==2.32.4
+# datos_prueba.py y ejecutar_pruebas.py lo usan (Locust ya lo trae, pero se deja explicito).
+requests==2.32.3

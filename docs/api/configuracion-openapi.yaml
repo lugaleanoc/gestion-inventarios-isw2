@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: JAK Inventory — Microservicio de Configuración
-  version: 1.0.0
+  version: 1.1.0
   description: |
     Permite que cada empresa adapte reglas, alertas y el dashboard (RF26, RF27, RF28),
     con parámetros independientes por empresa (RNF19).
@@ -9,7 +9,9 @@ info:
     **Dueño del catálogo de empresas y locales (decisión 1):** los demás servicios solo
     guardan `empresaId` y `localId`; si necesitan el detalle, lo consultan aquí.
 
-    **Identificación de la empresa:** del JWT (vía Gateway) o de `X-Empresa-Id` (llamadas internas).
+    **Identificación (Entrega 3):** este servicio NO valida el token JWT. El API Gateway
+    valida el token y reenvía la petición con los headers `X-Empresa-Id`, `X-Usuario-Id`
+    y `X-Rol`. Las llamadas internas entre servicios envían `X-Servicio-Origen` y `X-Empresa-Id`.
 
     **Quién lo consulta:**
     - **Gateway** (interno): crea empresas nuevas.
@@ -26,7 +28,7 @@ servers:
 - url: http://localhost:8080
   description: A través del API Gateway
 - url: http://configuracion-service:8000
-  description: Dirección interna en la red de Docker (ajustar puerto)
+  description: Dirección interna en la red de Docker
 tags:
 - name: Empresas
   description: Datos de la empresa
@@ -88,12 +90,10 @@ paths:
       tags:
       - Empresas
       summary: Consultar la empresa actual
-      description: La empresa se toma del JWT o de `X-Empresa-Id`.
+      description: La empresa se toma de `X-Empresa-Id`.
       operationId: consultarEmpresa
       security:
-      - bearerAuth: []
-      - servicioOrigen: []
-        empresaInterna: []
+      - empresa: []
       responses:
         '200':
           description: Empresa
@@ -102,7 +102,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Empresa'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
     put:
       tags:
       - Empresas
@@ -110,7 +110,8 @@ paths:
       description: 'Rol: `administrador`.'
       operationId: actualizarEmpresa
       security:
-      - bearerAuth: []
+      - empresa: []
+        rol: []
       requestBody:
         required: true
         content:
@@ -134,7 +135,7 @@ paths:
         '400':
           $ref: '#/components/responses/DatosInvalidos'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           $ref: '#/components/responses/SinPermiso'
   /api/configuracion/locales:
@@ -144,9 +145,7 @@ paths:
       summary: Listar los locales de la empresa
       operationId: listarLocales
       security:
-      - bearerAuth: []
-      - servicioOrigen: []
-        empresaInterna: []
+      - empresa: []
       parameters:
       - name: activo
         in: query
@@ -163,7 +162,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/Local'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
     post:
       tags:
       - Locales
@@ -171,7 +170,8 @@ paths:
       description: 'Rol: `administrador`.'
       operationId: crearLocal
       security:
-      - bearerAuth: []
+      - empresa: []
+        rol: []
       requestBody:
         required: true
         content:
@@ -188,7 +188,7 @@ paths:
         '400':
           $ref: '#/components/responses/DatosInvalidos'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           $ref: '#/components/responses/SinPermiso'
   /api/configuracion/locales/{localId}:
@@ -204,9 +204,7 @@ paths:
       summary: Consultar un local
       operationId: consultarLocal
       security:
-      - bearerAuth: []
-      - servicioOrigen: []
-        empresaInterna: []
+      - empresa: []
       responses:
         '200':
           description: Local
@@ -215,7 +213,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Local'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '404':
           $ref: '#/components/responses/NoEncontrado'
     put:
@@ -225,7 +223,8 @@ paths:
       description: 'Rol: `administrador`.'
       operationId: actualizarLocal
       security:
-      - bearerAuth: []
+      - empresa: []
+        rol: []
       requestBody:
         required: true
         content:
@@ -242,7 +241,7 @@ paths:
         '400':
           $ref: '#/components/responses/DatosInvalidos'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           $ref: '#/components/responses/SinPermiso'
         '404':
@@ -254,7 +253,8 @@ paths:
       description: 'Rol: `administrador`. Queda `activo = false`; sus ventas y balances se conservan.'
       operationId: darBajaLocal
       security:
-      - bearerAuth: []
+      - empresa: []
+        rol: []
       responses:
         '200':
           description: Local dado de baja
@@ -263,7 +263,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Local'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           $ref: '#/components/responses/SinPermiso'
         '404':
@@ -275,9 +275,7 @@ paths:
       summary: Listar los stocks mínimos definidos por producto
       operationId: listarStockMinimo
       security:
-      - bearerAuth: []
-      - servicioOrigen: []
-        empresaInterna: []
+      - empresa: []
       responses:
         '200':
           description: Productos con stock mínimo propio
@@ -288,7 +286,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/StockMinimo'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
   /api/configuracion/stock-minimo/{productoId}:
     parameters:
     - name: productoId
@@ -307,9 +305,7 @@ paths:
         El valor aplica al total del producto (suma de todas las bodegas, decisión 4).
       operationId: consultarStockMinimo
       security:
-      - bearerAuth: []
-      - servicioOrigen: []
-        empresaInterna: []
+      - empresa: []
       responses:
         '200':
           description: Stock mínimo vigente
@@ -318,7 +314,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/StockMinimo'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
     put:
       tags:
       - Reglas
@@ -326,7 +322,8 @@ paths:
       description: 'Rol: `administrador`.'
       operationId: definirStockMinimo
       security:
-      - bearerAuth: []
+      - empresa: []
+        rol: []
       requestBody:
         required: true
         content:
@@ -350,7 +347,7 @@ paths:
         '400':
           $ref: '#/components/responses/DatosInvalidos'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           $ref: '#/components/responses/SinPermiso'
   /api/configuracion/alertas:
@@ -360,9 +357,7 @@ paths:
       summary: Consultar qué alertas están activas
       operationId: consultarAlertas
       security:
-      - bearerAuth: []
-      - servicioOrigen: []
-        empresaInterna: []
+      - empresa: []
       responses:
         '200':
           description: Estado de cada alerta
@@ -371,7 +366,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConfigAlertas'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
     put:
       tags:
       - Reglas
@@ -379,7 +374,8 @@ paths:
       description: 'Rol: `administrador`. Las alertas se muestran en el panel web, no hay correo (decisión 9).'
       operationId: configurarAlertas
       security:
-      - bearerAuth: []
+      - empresa: []
+        rol: []
       requestBody:
         required: true
         content:
@@ -396,7 +392,7 @@ paths:
         '400':
           $ref: '#/components/responses/DatosInvalidos'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           $ref: '#/components/responses/SinPermiso'
   /api/configuracion/dashboard:
@@ -407,9 +403,7 @@ paths:
       description: Lo consulta Reportes para saber qué construir para esta empresa.
       operationId: consultarDashboard
       security:
-      - bearerAuth: []
-      - servicioOrigen: []
-        empresaInterna: []
+      - empresa: []
       responses:
         '200':
           description: Configuración del dashboard
@@ -418,7 +412,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConfigDashboard'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
     put:
       tags:
       - Dashboard
@@ -426,7 +420,8 @@ paths:
       description: 'Rol: `administrador`.'
       operationId: configurarDashboard
       security:
-      - bearerAuth: []
+      - empresa: []
+        rol: []
       requestBody:
         required: true
         content:
@@ -443,7 +438,7 @@ paths:
         '400':
           $ref: '#/components/responses/DatosInvalidos'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           $ref: '#/components/responses/SinPermiso'
   /health:
@@ -479,18 +474,6 @@ components:
         detalle:
           type: string
           example: Falta un campo obligatorio
-    Paginacion:
-      type: object
-      properties:
-        pagina:
-          type: integer
-          example: 1
-        porPagina:
-          type: integer
-          example: 20
-        total:
-          type: integer
-          example: 57
     Salud:
       type: object
       properties:
@@ -619,58 +602,21 @@ components:
               - mes
               example: semana
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: Token emitido por el API Gateway. Contiene `empresaId`, `usuarioId` y `rol`.
+    empresa:
+      type: apiKey
+      in: header
+      name: X-Empresa-Id
+      description: Empresa de la petición. La pone el Gateway (sacada del token) o el servicio que hace la llamada interna.
+    rol:
+      type: apiKey
+      in: header
+      name: X-Rol
+      description: Rol del usuario. Lo pone el Gateway después de validar el token.
     servicioOrigen:
       type: apiKey
       in: header
       name: X-Servicio-Origen
       description: Nombre del microservicio que llama. Solo red interna de Docker (el Gateway no enruta estas llamadas).
-    empresaInterna:
-      type: apiKey
-      in: header
-      name: X-Empresa-Id
-      description: Empresa en nombre de la cual se hace la llamada interna.
-  parameters:
-    Pagina:
-      name: pagina
-      in: query
-      schema:
-        type: integer
-        minimum: 1
-        default: 1
-    PorPagina:
-      name: porPagina
-      in: query
-      schema:
-        type: integer
-        minimum: 1
-        maximum: 100
-        default: 20
-    FechaDesde:
-      name: fechaDesde
-      in: query
-      schema:
-        type: string
-        format: date
-      example: '2026-10-01'
-    FechaHasta:
-      name: fechaHasta
-      in: query
-      schema:
-        type: string
-        format: date
-      example: '2026-10-31'
-    LocalIdFiltro:
-      name: localId
-      in: query
-      description: Filtra por local
-      schema:
-        type: integer
-      example: 1
   responses:
     DatosInvalidos:
       description: Los datos enviados no son válidos
@@ -678,8 +624,8 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
-    NoAutenticado:
-      description: Falta el token (o los headers internos) o no es válido
+    FaltanHeaders:
+      description: Falta el header X-Empresa-Id (la petición no pasó por el Gateway ni es interna)
       content:
         application/json:
           schema:
@@ -692,18 +638,6 @@ components:
             $ref: '#/components/schemas/Error'
     NoEncontrado:
       description: El recurso no existe o pertenece a otra empresa
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    Conflicto:
-      description: La operación choca con el estado actual de los datos
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    ServicioNoDisponible:
-      description: Un servicio del que depende no respondió después de 3 intentos (circuit breaker)
       content:
         application/json:
           schema:
