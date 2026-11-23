@@ -41,7 +41,6 @@ services:
     ports:
       - "3308:3306"
 
-services:
   configuracion:
     ports:
       - "8003:8000"
