@@ -1,0 +1,3 @@
+Type,Name,Request Count,Failure Count,Median Response Time,Average Response Time,Min Response Time,Max Response Time,Average Content Size,Requests/s,Failures/s,50%,66%,75%,80%,90%,95%,98%,99%,99.9%,99.99%,100%
+GET,E4 GET /reposicion/resumen,5803,0,7,6.904064991389366,2.1852460004083696,45.509939000112354,32.0,48.72442806298892,0.0,7,9,10,10,11,12,15,16,36,46,46
+,Aggregated,5803,0,7,6.904064991389366,2.1852460004083696,45.509939000112354,32.0,48.72442806298892,0.0,7,9,10,10,11,12,15,16,36,46,46
