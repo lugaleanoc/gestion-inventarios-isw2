@@ -38,7 +38,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"
 
 # Comando con el que arranca el contenedor.
-#   -w 2            dos procesos atendiendo peticiones
+#   -w 1            un proceso atendiendo peticiones
 #   -b 0.0.0.0:8000 escucha en todas las interfaces, no solo dentro del contenedor
 #   wsgi:app        el archivo wsgi.py y su variable app
 CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:8000", "--access-logfile", "-", "wsgi:app"]
