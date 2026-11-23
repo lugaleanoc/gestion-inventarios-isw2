@@ -10,7 +10,7 @@ CARPETA = os.path.dirname(os.path.abspath(__file__))
 
 def main():
     parser = argparse.ArgumentParser(description="Ejecuta las pruebas de rendimiento de Kevin con Locust")
-    parser.add_argument("pruebas", nargs="*", help="por ejemplo: t01 t07 t13 (por defecto, las 15)")
+    parser.add_argument("pruebas", nargs="*", help="por ejemplo: p01 p07 p13 (por defecto, las 15)")
     parser.add_argument("--host", default=os.getenv("HOST", "http://localhost:8080"), help="URL del Gateway")
     parser.add_argument("--modo", choices=["gateway", "directo"], default=os.getenv("JAK_MODO", "gateway"))
     parser.add_argument("--duracion", default=None, help="reemplaza la duración de todos los escenarios, por ejemplo 10s")
@@ -31,7 +31,7 @@ def main():
             [
                 sys.executable, "-m", "locust", "-f", "locustfile_kevin.py", "--headless",
                 "--host", args.host, "-u", str(tipo["usuarios"]), "-r", str(tipo["rampa"]), "-t", duracion,
-                "--tags", prueba, "--csv", f"resultados/{prueba}", "--html", f"resultados/{prueba}.html",
+                "--tags", PRUEBAS[prueba]["tarea"], "--csv", f"resultados/{prueba}", "--html", f"resultados/{prueba}.html",
                 "--only-summary",
             ],
             cwd=CARPETA,

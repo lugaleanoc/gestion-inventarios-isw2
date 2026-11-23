@@ -19,10 +19,9 @@ CABECERAS_DIRECTAS = {
 
 
 class UsuarioJak(HttpUser):
-    wait_time = between(0.2, 1.0)
+    wait_time = between(0.5, 1.5)
 
     _token = None
-    _tienda = None
     _proveedor_id = None
 
     @property
@@ -30,18 +29,6 @@ class UsuarioJak(HttpUser):
         if self._token is None:
             self._token = self._iniciar_sesion()
         return {"Authorization": f"Bearer {self._token}"}
-
-    @property
-    def tienda(self):
-        if self._tienda is None:
-            r = requests.post(
-                f"{self.host}/api/tiendas-web",
-                json={"nombre": f"Tienda {uuid.uuid4().hex[:6]}"},
-                headers=self.autorizacion,
-                timeout=30,
-            )
-            self._tienda = r.json()
-        return self._tienda
 
     @property
     def proveedor_id(self):
@@ -103,68 +90,27 @@ class UsuarioJak(HttpUser):
                 r.failure(f"{r.status_code}: {r.text[:120]}")
             return r
 
-    @tag("t01")
+    @tag("login")
     @task
-    def t01_login(self):
+    def login(self):
         self.autorizacion
         self._pedir(
-            "POST", "/api/auth/login", "T01 POST /api/auth/login",
+            "POST", "/api/auth/login", "POST /api/auth/login",
             publico=True, json={"correo": CORREO, "contrasena": CONTRASENA},
         )
 
-    @tag("t02")
+    @tag("por_producto")
     @task
-    def t02_registro_de_empresa(self):
+    def por_producto(self):
+        self.proveedor_id
+        self._pedir("GET", "/api/proveedores/por-producto/1", "GET /api/proveedores/por-producto/{id}", servicio="proveedores")
+
+    @tag("crear_proveedor")
+    @task
+    def crear_proveedor(self):
         sufijo = uuid.uuid4().hex[:12]
         self._pedir(
-            "POST", "/api/empresas/registro", "T02 POST /api/empresas/registro",
-            esperados=(201,), publico=True,
-            json={
-                "nombreEmpresa": f"Empresa {sufijo}",
-                "nit": f"CARGA-{sufijo}",
-                "administrador": {"nombre": "Admin carga", "correo": f"{sufijo}@carga.co", "contrasena": "Carga12345"},
-            },
-        )
-
-    @tag("t03")
-    @task
-    def t03_token_de_tienda_web(self):
-        self._pedir(
-            "POST", "/api/auth/token-tienda", "T03 POST /api/auth/token-tienda",
-            publico=True,
-            json={"clienteId": self.tienda["clienteId"], "claveSecreta": self.tienda["claveSecreta"]},
-        )
-
-    @tag("t04")
-    @task
-    def t04_listar_usuarios(self):
-        self._pedir("GET", "/api/usuarios?pagina=1&porPagina=20", "T04 GET /api/usuarios")
-
-    @tag("t05")
-    @task
-    def t05_crear_usuario(self):
-        sufijo = uuid.uuid4().hex[:12]
-        self._pedir(
-            "POST", "/api/usuarios", "T05 POST /api/usuarios", esperados=(201,),
-            json={"nombre": f"Vendedor {sufijo}", "correo": f"{sufijo}@carga.co", "contrasena": "Carga12345", "rol": "vendedor"},
-        )
-
-    @tag("t06")
-    @task
-    def t06_listar_tiendas_web(self):
-        self._pedir("GET", "/api/tiendas-web", "T06 GET /api/tiendas-web")
-
-    @tag("t07")
-    @task
-    def t07_listar_proveedores(self):
-        self._pedir("GET", "/api/proveedores?activo=true&pagina=1&porPagina=20", "T07 GET /api/proveedores", servicio="proveedores")
-
-    @tag("t08")
-    @task
-    def t08_crear_proveedor(self):
-        sufijo = uuid.uuid4().hex[:12]
-        self._pedir(
-            "POST", "/api/proveedores", "T08 POST /api/proveedores", esperados=(201,), servicio="proveedores",
+            "POST", "/api/proveedores", "POST /api/proveedores", esperados=(201,), servicio="proveedores",
             json={
                 "nombre": f"Proveedor {sufijo}",
                 "nit": f"P-{sufijo}",
@@ -173,49 +119,15 @@ class UsuarioJak(HttpUser):
             },
         )
 
-    @tag("t09")
+    @tag("dashboard")
     @task
-    def t09_consultar_proveedor(self):
-        self._pedir("GET", f"/api/proveedores/{self.proveedor_id}", "T09 GET /api/proveedores/{id}", servicio="proveedores")
+    def dashboard(self):
+        self._pedir("GET", "/api/reportes/dashboard", "GET /api/reportes/dashboard", servicio="reportes")
 
-    @tag("t10")
+    @tag("sin_cache")
     @task
-    def t10_actualizar_proveedor(self):
+    def sin_cache(self):
         self._pedir(
-            "PUT", f"/api/proveedores/{self.proveedor_id}", "T10 PUT /api/proveedores/{id}", servicio="proveedores",
-            json={"nombre": "Proveedor actualizado", "nit": f"BASE-{self.proveedor_id}-{uuid.uuid4().hex[:6]}"},
-        )
-
-    @tag("t11")
-    @task
-    def t11_asociar_producto(self):
-        self._pedir(
-            "POST", f"/api/proveedores/{self.proveedor_id}/productos", "T11 POST /api/proveedores/{id}/productos",
-            esperados=(201,), servicio="proveedores",
-            json={"productoId": int(uuid.uuid4().int % 1_000_000_000) + 2, "precioCompra": 2500},
-        )
-
-    @tag("t12")
-    @task
-    def t12_proveedores_por_producto(self):
-        self._pedir("GET", "/api/proveedores/por-producto/1", "T12 GET /api/proveedores/por-producto/{id}", servicio="proveedores")
-
-    @tag("t13")
-    @task
-    def t13_dashboard_con_cache(self):
-        self._pedir("GET", "/api/reportes/dashboard", "T13 GET /api/reportes/dashboard", servicio="reportes")
-
-    @tag("t14")
-    @task
-    def t14_reporte_sin_cache(self):
-        self._pedir(
-            "GET", "/api/reportes/ventas-por-canal?refrescar=true", "T14 GET /api/reportes/ventas-por-canal?refrescar=true",
+            "GET", "/api/reportes/ventas-por-canal?refrescar=true", "GET /api/reportes/ventas-por-canal?refrescar=true",
             servicio="reportes",
         )
-
-    @tag("t15")
-    @task
-    def t15_flujo_mixto(self):
-        self._pedir("GET", "/api/proveedores?activo=true", "T15 GET proveedores", servicio="proveedores")
-        self._pedir("GET", "/api/reportes/inventario", "T15 GET reportes/inventario", servicio="reportes")
-        self._pedir("GET", "/api/reportes/dashboard", "T15 GET reportes/dashboard", servicio="reportes")
