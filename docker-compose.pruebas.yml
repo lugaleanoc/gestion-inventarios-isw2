@@ -40,3 +40,16 @@ services:
   reposicion-db:
     ports:
       - "3308:3306"
+
+services:
+  configuracion:
+    ports:
+      - "8003:8000"
+
+  ventas:
+    ports:
+      - "8004:8000"
+
+  balance:
+    ports:
+      - "8005:8000"

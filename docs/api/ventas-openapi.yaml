@@ -1,13 +1,13 @@
 openapi: 3.0.3
 info:
   title: JAK Inventory — Microservicio de Ventas
-  version: 1.1.0
+  version: 1.2.0
   description: |
     Registra las ventas realizadas en los locales físicos y en la tienda web,
     con su canal y su medio de pago (RF15, RF16).
 
     **Identificación de la empresa (RNF19):** la empresa nunca llega por la URL.
-    - Peticiones externas (vía API Gateway): se toma `empresaId`, `usuarioId` y `rol` del token JWT.
+    - Peticiones externas (vía API Gateway): el Gateway valida el token y envía los headers `X-Empresa-Id`, `X-Usuario-Id` y `X-Rol`. Este servicio NO valida el token.
     - Peticiones internas (servicio a servicio, sin pasar por el Gateway): se toma de los
       headers `X-Servicio-Origen` y `X-Empresa-Id`.
 
@@ -28,7 +28,7 @@ info:
       y el fallo queda en el log. Un administrador puede reintentarlo con
       `POST /api/ventas/{ventaId}/reintento-balance`.
 
-    **Roles (del JWT):**
+    **Roles (header `X-Rol`):**
     - `administrador`: todas las operaciones.
     - `vendedor`: registrar y consultar ventas.
     - `tienda_web`: registrar ventas, solo con canal `tienda_web`.
@@ -41,7 +41,7 @@ servers:
   - url: http://localhost:8080
     description: A través del API Gateway (peticiones de usuarios y tienda web)
   - url: http://ventas-service:8000
-    description: Dirección interna en la red de Docker (llamadas entre servicios; ajustar puerto)
+    description: Dirección interna en la red de Docker (llamadas entre servicios)
 
 tags:
   - name: Ventas
@@ -70,7 +70,9 @@ paths:
         El precio NO lo envía el cliente: se toma de Inventario.
       operationId: registrarVenta
       security:
-        - bearerAuth: []
+        - empresa: []
+          usuario: []
+          rol: []
       requestBody:
         required: true
         content:
@@ -109,7 +111,7 @@ paths:
         '400':
           $ref: '#/components/responses/DatosInvalidos'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           $ref: '#/components/responses/SinPermiso'
         '409':
@@ -139,9 +141,11 @@ paths:
         Interno: Reportes y Dashboard (`X-Servicio-Origen: reportes`).
       operationId: listarVentas
       security:
-        - bearerAuth: []
+        - empresa: []
+          usuario: []
+          rol: []
         - servicioOrigen: []
-          empresaInterna: []
+          empresa: []
       parameters:
         - $ref: '#/components/parameters/LocalId'
         - name: canal
@@ -181,7 +185,7 @@ paths:
                   paginacion:
                     $ref: '#/components/schemas/Paginacion'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           $ref: '#/components/responses/SinPermiso'
 
@@ -194,9 +198,11 @@ paths:
         Si la venta pertenece a otra empresa responde 404.
       operationId: consultarVenta
       security:
-        - bearerAuth: []
+        - empresa: []
+          usuario: []
+          rol: []
         - servicioOrigen: []
-          empresaInterna: []
+          empresa: []
       parameters:
         - $ref: '#/components/parameters/VentaId'
       responses:
@@ -207,7 +213,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Venta'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           $ref: '#/components/responses/SinPermiso'
         '404':
@@ -228,7 +234,9 @@ paths:
         la venta como `registrado`, porque un intento anterior sí llegó.
       operationId: reintentarBalance
       security:
-        - bearerAuth: []
+        - empresa: []
+          usuario: []
+          rol: []
       parameters:
         - $ref: '#/components/parameters/VentaId'
       responses:
@@ -239,7 +247,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Venta'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           $ref: '#/components/responses/SinPermiso'
         '404':
@@ -270,9 +278,11 @@ paths:
         Externo: `administrador`. Interno: Reportes.
       operationId: resumenVentas
       security:
-        - bearerAuth: []
+        - empresa: []
+          usuario: []
+          rol: []
         - servicioOrigen: []
-          empresaInterna: []
+          empresa: []
       parameters:
         - $ref: '#/components/parameters/LocalId'
         - $ref: '#/components/parameters/FechaDesde'
@@ -285,7 +295,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ResumenVentas'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           $ref: '#/components/responses/SinPermiso'
 
@@ -306,22 +316,26 @@ paths:
 
 components:
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: |
-        Token emitido por el API Gateway. Contiene `empresaId`, `usuarioId` y `rol`.
+    empresa:
+      type: apiKey
+      in: header
+      name: X-Empresa-Id
+      description: Empresa de la petición. La pone el Gateway (sacada del token) o el servicio que hace la llamada interna.
+    usuario:
+      type: apiKey
+      in: header
+      name: X-Usuario-Id
+      description: Usuario que hace la petición. Lo pone el Gateway después de validar el token.
+    rol:
+      type: apiKey
+      in: header
+      name: X-Rol
+      description: Rol del usuario. Lo pone el Gateway después de validar el token.
     servicioOrigen:
       type: apiKey
       in: header
       name: X-Servicio-Origen
-      description: Nombre del microservicio que llama (por ejemplo `reportes`). Solo red interna.
-    empresaInterna:
-      type: apiKey
-      in: header
-      name: X-Empresa-Id
-      description: Empresa en nombre de la cual se hace la llamada interna.
+      description: Nombre del microservicio que llama. Solo red interna de Docker (el Gateway no enruta estas llamadas).
 
   parameters:
     VentaId:
@@ -455,7 +469,7 @@ components:
         empresaId:
           type: integer
           readOnly: true
-          description: Tomado del JWT o del header X-Empresa-Id
+          description: Tomado del header X-Empresa-Id
           example: 4
         localId:
           type: integer
@@ -478,7 +492,7 @@ components:
         usuarioId:
           type: integer
           readOnly: true
-          description: Usuario que registró la venta (tomado del JWT)
+          description: Usuario que registró la venta (tomado del header X-Usuario-Id)
           example: 12
         fechaHora:
           type: string
@@ -572,15 +586,15 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
-    NoAutenticado:
-      description: Falta el token (o los headers internos) o no es válido
+    FaltanHeaders:
+      description: Faltan los headers del Gateway (o los de la llamada interna)
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            error: NO_AUTENTICADO
-            detalle: Token inválido o vencido
+            error: FALTAN_HEADERS
+            detalle: Falta el header X-Empresa-Id
     SinPermiso:
       description: El rol no permite esta operación
       content:

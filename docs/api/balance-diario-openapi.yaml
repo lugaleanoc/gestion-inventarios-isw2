@@ -1,24 +1,24 @@
 openapi: 3.0.3
 info:
   title: JAK Inventory — Microservicio de Balance Diario
-  version: 1.1.0
+  version: 1.2.0
   description: |
     Registra y consolida los ingresos y egresos operativos de cada local y de la
     tienda web, diferenciando efectivo, tarjeta y QR (RF21, RF22), y genera el
     balance diario por local y fecha (RF23). No realiza funciones contables.
 
     **Identificación de la empresa (RNF19):** la empresa nunca llega por la URL.
-    - Peticiones externas (vía API Gateway): `empresaId`, `usuarioId` y `rol` vienen en el JWT.
+    - Peticiones externas (vía API Gateway): el Gateway valida el token y envía los headers `X-Empresa-Id`, `X-Usuario-Id` y `X-Rol`. Este servicio NO valida el token.
     - Peticiones internas (servicio a servicio, sin pasar por el Gateway): headers
       `X-Servicio-Origen` y `X-Empresa-Id`.
 
     Todo se filtra por `empresaId`. `empresaId` y `localId` pertenecen a Configuración;
-    este servicio solo guarda sus identificadores.
+    este servicio solo guar da sus identificadores.
 
     **Quién lo llama:**
     - **Ventas** (interno): `POST /api/balance/movimientos/ventas` para registrar el ingreso de cada venta.
     - **Reportes y Dashboard** (interno): consultas de balances y movimientos.
-    - **Usuarios** (vía Gateway): movimientos manuales, ajustes y consultas.
+    - **Panel web** (vía Gateway): movimientos manuales, ajustes y consultas.
 
     Este servicio no llama a ningún otro.
 
@@ -26,7 +26,7 @@ info:
     borran. Un error se corrige con un movimiento de ajuste que referencia al
     original. Por eso no hay endpoints PUT, PATCH ni DELETE.
 
-    **Roles (del JWT):**
+    **Roles (header `X-Rol`):**
     - `administrador`: todas las operaciones.
     - `vendedor`: registrar ingresos y egresos manuales y consultar movimientos y balances.
     - `tienda_web`, `encargado_bodega`: sin acceso a este servicio.
@@ -35,7 +35,7 @@ servers:
   - url: http://localhost:8080
     description: A través del API Gateway (peticiones de usuarios)
   - url: http://balance-service:8000
-    description: Dirección interna en la red de Docker (llamadas entre servicios; ajustar puerto)
+    description: Dirección interna en la red de Docker (llamadas entre servicios)
 
 tags:
   - name: Movimientos
@@ -56,7 +56,9 @@ paths:
         Roles: `administrador`, `vendedor`.
       operationId: registrarMovimiento
       security:
-        - bearerAuth: []
+        - empresa: []
+          usuario: []
+          rol: []
       requestBody:
         required: true
         content:
@@ -79,7 +81,7 @@ paths:
         '400':
           $ref: '#/components/responses/DatosInvalidos'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           $ref: '#/components/responses/SinPermiso'
 
@@ -90,9 +92,11 @@ paths:
         Externo: `administrador`, `vendedor`. Interno: Reportes (`X-Servicio-Origen: reportes`).
       operationId: listarMovimientos
       security:
-        - bearerAuth: []
+        - empresa: []
+          usuario: []
+          rol: []
         - servicioOrigen: []
-          empresaInterna: []
+          empresa: []
       parameters:
         - $ref: '#/components/parameters/LocalId'
         - name: tipo
@@ -126,7 +130,7 @@ paths:
                   paginacion:
                     $ref: '#/components/schemas/Paginacion'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           $ref: '#/components/responses/SinPermiso'
 
@@ -144,7 +148,7 @@ paths:
       operationId: registrarIngresoVenta
       security:
         - servicioOrigen: []
-          empresaInterna: []
+          empresa: []
       requestBody:
         required: true
         content:
@@ -168,7 +172,7 @@ paths:
         '400':
           $ref: '#/components/responses/DatosInvalidos'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           description: El servicio de origen no es `ventas`
           content:
@@ -194,9 +198,11 @@ paths:
         Si el movimiento pertenece a otra empresa responde 404.
       operationId: consultarMovimiento
       security:
-        - bearerAuth: []
+        - empresa: []
+          usuario: []
+          rol: []
         - servicioOrigen: []
-          empresaInterna: []
+          empresa: []
       parameters:
         - $ref: '#/components/parameters/MovimientoId'
       responses:
@@ -207,7 +213,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Movimiento'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           $ref: '#/components/responses/SinPermiso'
         '404':
@@ -223,7 +229,9 @@ paths:
         Rol: `administrador`.
       operationId: registrarAjuste
       security:
-        - bearerAuth: []
+        - empresa: []
+          usuario: []
+          rol: []
       parameters:
         - $ref: '#/components/parameters/MovimientoId'
       requestBody:
@@ -245,7 +253,7 @@ paths:
         '400':
           $ref: '#/components/responses/DatosInvalidos'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           $ref: '#/components/responses/SinPermiso'
         '404':
@@ -261,9 +269,11 @@ paths:
         Externo: `administrador`, `vendedor`. Interno: Reportes.
       operationId: balanceDiario
       security:
-        - bearerAuth: []
+        - empresa: []
+          usuario: []
+          rol: []
         - servicioOrigen: []
-          empresaInterna: []
+          empresa: []
       parameters:
         - name: localId
           in: query
@@ -288,7 +298,7 @@ paths:
         '400':
           $ref: '#/components/responses/DatosInvalidos'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           $ref: '#/components/responses/SinPermiso'
 
@@ -301,9 +311,11 @@ paths:
         Externo: `administrador`. Interno: Reportes.
       operationId: reporteBalances
       security:
-        - bearerAuth: []
+        - empresa: []
+          usuario: []
+          rol: []
         - servicioOrigen: []
-          empresaInterna: []
+          empresa: []
       parameters:
         - $ref: '#/components/parameters/LocalId'
         - name: fechaDesde
@@ -343,7 +355,7 @@ paths:
         '400':
           $ref: '#/components/responses/DatosInvalidos'
         '401':
-          $ref: '#/components/responses/NoAutenticado'
+          $ref: '#/components/responses/FaltanHeaders'
         '403':
           $ref: '#/components/responses/SinPermiso'
 
@@ -371,21 +383,26 @@ paths:
 
 components:
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: Token emitido por el API Gateway. Contiene `empresaId`, `usuarioId` y `rol`.
+    empresa:
+      type: apiKey
+      in: header
+      name: X-Empresa-Id
+      description: Empresa de la petición. La pone el Gateway (sacada del token) o el servicio que hace la llamada interna.
+    usuario:
+      type: apiKey
+      in: header
+      name: X-Usuario-Id
+      description: Usuario que hace la petición. Lo pone el Gateway después de validar el token.
+    rol:
+      type: apiKey
+      in: header
+      name: X-Rol
+      description: Rol del usuario. Lo pone el Gateway después de validar el token.
     servicioOrigen:
       type: apiKey
       in: header
       name: X-Servicio-Origen
-      description: Nombre del microservicio que llama (`ventas` o `reportes`). Solo red interna.
-    empresaInterna:
-      type: apiKey
-      in: header
-      name: X-Empresa-Id
-      description: Empresa en nombre de la cual se hace la llamada interna.
+      description: Nombre del microservicio que llama. Solo red interna de Docker (el Gateway no enruta estas llamadas).
 
   parameters:
     MovimientoId:
@@ -551,7 +568,7 @@ components:
         registradoPor:
           type: string
           readOnly: true
-          description: usuarioId del JWT, o el nombre del servicio si fue una llamada interna (RNF20)
+          description: valor de X-Usuario-Id, o el nombre del servicio si fue una llamada interna (RNF20)
           example: '12'
         fechaHora:
           type: string
@@ -631,8 +648,8 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
-    NoAutenticado:
-      description: Falta el token (o los headers internos) o no es válido
+    FaltanHeaders:
+      description: Faltan los headers del Gateway (o los de la llamada interna)
       content:
         application/json:
           schema:
