@@ -1,0 +1,2209 @@
+{
+  "info": {
+    "name": "JAK Inventory · Entrega 3",
+    "description": "Todas las peticiones entran por el API Gateway. Primero: Registrar empresa y Login (guarda el token solo).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "00 Salud",
+      "description": "",
+      "item": [
+        {
+          "name": "Gateway /health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 Gateway · Autenticación",
+      "description": "Orden sugerido: registrar empresa y login. El logout está en la carpeta 08, al final, porque invalida el token.",
+      "item": [
+        {
+          "name": "Registrar empresa",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 201\", function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/empresas/registro",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "empresas",
+                "registro"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreEmpresa\": \"Empresa Demo\",\n  \"nit\": \"900123456-7\",\n  \"administrador\": {\n    \"nombre\": \"Ana Administradora\",\n    \"correo\": \"{{correo}}\",\n    \"contrasena\": \"{{contrasena}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });",
+                  "let datos = {};",
+                  "try { datos = pm.response.json(); } catch (e) {}",
+                  "try { const valor = datos.token; if (valor !== undefined) { pm.collectionVariables.set(\"token\", valor); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"correo\": \"{{correo}}\",\n  \"contrasena\": \"{{contrasena}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Login con contraseña incorrecta (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 401\", function () { pm.response.to.have.status(401); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"correo\": \"{{correo}}\",\n  \"contrasena\": \"Incorrecta1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Cambiar contraseña",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 204\", function () { pm.response.to.have.status(204); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/contrasena",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "contrasena"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contrasenaActual\": \"{{contrasena}}\",\n  \"nuevaContrasena\": \"{{contrasena}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Solicitar recuperación",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 202\", function () { pm.response.to.have.status(202); });",
+                  "let datos = {};",
+                  "try { datos = pm.response.json(); } catch (e) {}",
+                  "try { const valor = datos.codigoRecuperacion; if (valor !== undefined) { pm.collectionVariables.set(\"codigoRecuperacion\", valor); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/recuperacion",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "recuperacion"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"correo\": \"{{correo}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Restablecer contraseña",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 204\", function () { pm.response.to.have.status(204); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/restablecimiento",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "restablecimiento"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"codigoRecuperacion\": \"{{codigoRecuperacion}}\",\n  \"nuevaContrasena\": \"{{contrasena}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 Gateway · Usuarios",
+      "description": "",
+      "item": [
+        {
+          "name": "Listar usuarios",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/usuarios?pagina=1&porPagina=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "usuarios"
+              ],
+              "query": [
+                {
+                  "key": "pagina",
+                  "value": "1"
+                },
+                {
+                  "key": "porPagina",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Crear usuario vendedor",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 201\", function () { pm.response.to.have.status(201); });",
+                  "let datos = {};",
+                  "try { datos = pm.response.json(); } catch (e) {}",
+                  "try { const valor = datos.usuarioId; if (valor !== undefined) { pm.collectionVariables.set(\"usuarioId\", valor); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/usuarios",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "usuarios"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Vera Vendedora\",\n  \"correo\": \"vera@demo.co\",\n  \"contrasena\": \"Clave12345\",\n  \"rol\": \"vendedor\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Consultar usuario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/usuarios/{{usuarioId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "usuarios",
+                "{{usuarioId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Actualizar usuario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/usuarios/{{usuarioId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "usuarios",
+                "{{usuarioId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rol\": \"encargado_bodega\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Dar de baja usuario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/usuarios/{{usuarioId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "usuarios",
+                "{{usuarioId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 Gateway · Tiendas web",
+      "description": "",
+      "item": [
+        {
+          "name": "Listar tiendas web",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/tiendas-web",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tiendas-web"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Registrar tienda web",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 201\", function () { pm.response.to.have.status(201); });",
+                  "let datos = {};",
+                  "try { datos = pm.response.json(); } catch (e) {}",
+                  "try { const valor = datos.tiendaId; if (valor !== undefined) { pm.collectionVariables.set(\"tiendaId\", valor); } } catch (e) {}",
+                  "try { const valor = datos.clienteId; if (valor !== undefined) { pm.collectionVariables.set(\"clienteId\", valor); } } catch (e) {}",
+                  "try { const valor = datos.claveSecreta; if (valor !== undefined) { pm.collectionVariables.set(\"claveSecreta\", valor); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/tiendas-web",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tiendas-web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Tienda online\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Token de tienda web",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/token-tienda",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "token-tienda"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clienteId\": \"{{clienteId}}\",\n  \"claveSecreta\": \"{{claveSecreta}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Dar de baja tienda web",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/tiendas-web/{{tiendaId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tiendas-web",
+                "{{tiendaId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 Gateway · Rutas internas (deben dar 403)",
+      "description": "Para la demo: con el token ya iniciado, cualquiera de estas peticiones debe responder 403 SIN_PERMISO.",
+      "item": [
+        {
+          "name": "POST inventario/stock/descuentos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 403\", function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/inventario/stock/descuentos",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "inventario",
+                "stock",
+                "descuentos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ventaId\": 1,\n  \"items\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST inventario/stock/entradas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 403\", function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/inventario/stock/entradas",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "inventario",
+                "stock",
+                "entradas"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ordenId\": 1,\n  \"items\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST reposicion/solicitudes/automaticas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 403\", function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/reposicion/solicitudes/automaticas",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "reposicion",
+                "solicitudes",
+                "automaticas"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productoId\": 1,\n  \"stockActual\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST balance/movimientos/ventas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 403\", function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/balance/movimientos/ventas",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "balance",
+                "movimientos",
+                "ventas"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ventaId\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST configuracion/empresas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 403\", function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/configuracion/empresas",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "configuracion",
+                "empresas"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"X\",\n  \"nit\": \"1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 Proveedores",
+      "description": "",
+      "item": [
+        {
+          "name": "Listar proveedores",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/proveedores?activo=true&pagina=1&porPagina=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "proveedores"
+              ],
+              "query": [
+                {
+                  "key": "activo",
+                  "value": "true"
+                },
+                {
+                  "key": "pagina",
+                  "value": "1"
+                },
+                {
+                  "key": "porPagina",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Crear proveedor",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 201\", function () { pm.response.to.have.status(201); });",
+                  "let datos = {};",
+                  "try { datos = pm.response.json(); } catch (e) {}",
+                  "try { const valor = datos.proveedorId; if (valor !== undefined) { pm.collectionVariables.set(\"proveedorId\", valor); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/proveedores",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "proveedores"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Distribuidora Andina\",\n  \"nit\": \"800123456-1\",\n  \"contacto\": {\n    \"nombre\": \"Laura Gómez\",\n    \"telefono\": \"3001234567\",\n    \"correo\": \"ventas@andina.co\"\n  },\n  \"condiciones\": {\n    \"plazoEntregaDias\": 5,\n    \"formaPago\": \"30 días\",\n    \"pedidoMinimo\": 150000\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Consultar proveedor",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/proveedores/{{proveedorId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "proveedores",
+                "{{proveedorId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Actualizar proveedor",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/proveedores/{{proveedorId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "proveedores",
+                "{{proveedorId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Distribuidora Andina\",\n  \"nit\": \"800123456-1\",\n  \"contacto\": {\n    \"nombre\": \"Laura Gómez\",\n    \"telefono\": \"3001234567\",\n    \"correo\": \"ventas@andina.co\"\n  },\n  \"condiciones\": {\n    \"plazoEntregaDias\": 5,\n    \"formaPago\": \"30 días\",\n    \"pedidoMinimo\": 150000\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Asociar producto",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 201\", function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/proveedores/{{proveedorId}}/productos",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "proveedores",
+                "{{proveedorId}}",
+                "productos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productoId\": {{productoId}},\n  \"precioCompra\": 2500,\n  \"principal\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Productos del proveedor",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/proveedores/{{proveedorId}}/productos",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "proveedores",
+                "{{proveedorId}}",
+                "productos"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Proveedores de un producto",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/proveedores/por-producto/{{productoId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "proveedores",
+                "por-producto",
+                "{{productoId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Quitar producto del proveedor",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/proveedores/{{proveedorId}}/productos/{{productoId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "proveedores",
+                "{{proveedorId}}",
+                "productos",
+                "{{productoId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Dar de baja proveedor",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/proveedores/{{proveedorId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "proveedores",
+                "{{proveedorId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 Reportes",
+      "description": "Para mostrar el reporte parcial: apagar Balance Diario y pedir Balance o Dashboard con refrescar=true. La respuesta trae fuentesNoDisponibles: [\"balance\"].",
+      "item": [
+        {
+          "name": "Dashboard",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/reportes/dashboard",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "reportes",
+                "dashboard"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Dashboard de un local, sin caché",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/reportes/dashboard?localId={{localId}}&refrescar=true",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "reportes",
+                "dashboard"
+              ],
+              "query": [
+                {
+                  "key": "localId",
+                  "value": "{{localId}}"
+                },
+                {
+                  "key": "refrescar",
+                  "value": "true"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Ventas por canal",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/reportes/ventas-por-canal?fechaDesde=2026-11-01&fechaHasta=2026-11-30",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "reportes",
+                "ventas-por-canal"
+              ],
+              "query": [
+                {
+                  "key": "fechaDesde",
+                  "value": "2026-11-01"
+                },
+                {
+                  "key": "fechaHasta",
+                  "value": "2026-11-30"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Inventario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/reportes/inventario",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "reportes",
+                "inventario"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Productos agotados",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/reportes/productos-agotados",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "reportes",
+                "productos-agotados"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reposiciones",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/reportes/reposiciones",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "reportes",
+                "reposiciones"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Balance",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/reportes/balance?fechaDesde=2026-11-01&fechaHasta=2026-11-30",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "reportes",
+                "balance"
+              ],
+              "query": [
+                {
+                  "key": "fechaDesde",
+                  "value": "2026-11-01"
+                },
+                {
+                  "key": "fechaHasta",
+                  "value": "2026-11-30"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reporte de un local",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/reportes/locales/{{localId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "reportes",
+                "locales",
+                "{{localId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 Demo · flujo completo (servicios de Amanda y Jasmin)",
+      "description": "Sigue el guion de la demo. Los cuerpos salen de los contratos de la Entrega 2; si algún servicio cambió un campo, ajusta aquí.",
+      "item": [
+        {
+          "name": "1. Crear local",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 201\", function () { pm.response.to.have.status(201); });",
+                  "let datos = {};",
+                  "try { datos = pm.response.json(); } catch (e) {}",
+                  "try { const valor = datos.localId; if (valor !== undefined) { pm.collectionVariables.set(\"localId\", valor); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/configuracion/locales",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "configuracion",
+                "locales"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Sede Centro\",\n  \"direccion\": \"Calle 20 # 21-10\",\n  \"ciudad\": \"Manizales\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "2. Stock mínimo de un producto",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/configuracion/stock-minimo/{{productoId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "configuracion",
+                "stock-minimo",
+                "{{productoId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stockMinimo\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "3. Crear categoría",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 201\", function () { pm.response.to.have.status(201); });",
+                  "let datos = {};",
+                  "try { datos = pm.response.json(); } catch (e) {}",
+                  "try { const valor = datos.categoriaId; if (valor !== undefined) { pm.collectionVariables.set(\"categoriaId\", valor); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/inventario/categorias",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "inventario",
+                "categorias"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Abarrotes\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "4. Crear bodega",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 201\", function () { pm.response.to.have.status(201); });",
+                  "let datos = {};",
+                  "try { datos = pm.response.json(); } catch (e) {}",
+                  "try { const valor = datos.bodegaId; if (valor !== undefined) { pm.collectionVariables.set(\"bodegaId\", valor); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/inventario/bodegas",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "inventario",
+                "bodegas"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Bodega principal\",\n  \"localId\": {{localId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "5. Crear producto",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 201\", function () { pm.response.to.have.status(201); });",
+                  "let datos = {};",
+                  "try { datos = pm.response.json(); } catch (e) {}",
+                  "try { const valor = datos.productoId; if (valor !== undefined) { pm.collectionVariables.set(\"productoId\", valor); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/inventario/productos",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "inventario",
+                "productos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"codigo\": \"ARR-001\",\n  \"nombre\": \"Arroz 500 g\",\n  \"categoriaId\": {{categoriaId}},\n  \"unidadMedida\": \"unidad\",\n  \"precio\": 3200,\n  \"proveedorId\": {{proveedorId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "6. Registrar entrada de stock",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 201\", function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/inventario/movimientos",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "inventario",
+                "movimientos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"entrada\",\n  \"productoId\": {{productoId}},\n  \"bodegaId\": {{bodegaId}},\n  \"cantidad\": 50,\n  \"motivo\": \"Compra inicial\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "7. Ver kardex",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/inventario/movimientos?productoId={{productoId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "inventario",
+                "movimientos"
+              ],
+              "query": [
+                {
+                  "key": "productoId",
+                  "value": "{{productoId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "8. Registrar venta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 201\", function () { pm.response.to.have.status(201); });",
+                  "let datos = {};",
+                  "try { datos = pm.response.json(); } catch (e) {}",
+                  "try { const valor = datos.ventaId; if (valor !== undefined) { pm.collectionVariables.set(\"ventaId\", valor); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/ventas",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "ventas"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"localId\": {{localId}},\n  \"bodegaId\": {{bodegaId}},\n  \"canal\": \"tienda_fisica\",\n  \"medioPago\": \"efectivo\",\n  \"items\": [\n    {\n      \"productoId\": {{productoId}},\n      \"cantidad\": 45\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "9. Balance del día",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/balance/diario?localId={{localId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "balance",
+                "diario"
+              ],
+              "query": [
+                {
+                  "key": "localId",
+                  "value": "{{localId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "10. Alertas de inventario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/inventario/alertas",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "inventario",
+                "alertas"
+              ]
+            }
+          }
+        },
+        {
+          "name": "11. Solicitudes de reposición",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });",
+                  "let datos = {};",
+                  "try { datos = pm.response.json(); } catch (e) {}",
+                  "try { const valor = datos.datos[0].solicitudId; if (valor !== undefined) { pm.collectionVariables.set(\"solicitudId\", valor); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/reposicion/solicitudes?estado=pendiente",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "reposicion",
+                "solicitudes"
+              ],
+              "query": [
+                {
+                  "key": "estado",
+                  "value": "pendiente"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "12. Aprobar solicitud",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/reposicion/solicitudes/{{solicitudId}}/aprobacion",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "reposicion",
+                "solicitudes",
+                "{{solicitudId}}",
+                "aprobacion"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "13. Emitir orden",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 201\", function () { pm.response.to.have.status(201); });",
+                  "let datos = {};",
+                  "try { datos = pm.response.json(); } catch (e) {}",
+                  "try { const valor = datos.ordenId; if (valor !== undefined) { pm.collectionVariables.set(\"ordenId\", valor); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/reposicion/ordenes",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "reposicion",
+                "ordenes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"solicitudId\": {{solicitudId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "14. Recibir mercancía",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/reposicion/ordenes/{{ordenId}}/recepcion",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "reposicion",
+                "ordenes",
+                "{{ordenId}}",
+                "recepcion"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bodegaId\": {{bodegaId}},\n  \"cantidadRecibida\": 50\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 Cerrar sesión",
+      "description": "Invalida el token actual. Después hay que volver a hacer Login.",
+      "item": [
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 204\", function () { pm.response.to.have.status(204); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/auth/logout",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "correo",
+      "value": "admin@demo.co"
+    },
+    {
+      "key": "contrasena",
+      "value": "Clave12345"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "productoId",
+      "value": "1"
+    },
+    {
+      "key": "localId",
+      "value": "1"
+    },
+    {
+      "key": "proveedorId",
+      "value": ""
+    },
+    {
+      "key": "usuarioId",
+      "value": ""
+    },
+    {
+      "key": "tiendaId",
+      "value": ""
+    },
+    {
+      "key": "clienteId",
+      "value": ""
+    },
+    {
+      "key": "claveSecreta",
+      "value": ""
+    },
+    {
+      "key": "codigoRecuperacion",
+      "value": ""
+    },
+    {
+      "key": "categoriaId",
+      "value": ""
+    },
+    {
+      "key": "bodegaId",
+      "value": ""
+    },
+    {
+      "key": "ventaId",
+      "value": ""
+    },
+    {
+      "key": "solicitudId",
+      "value": ""
+    },
+    {
+      "key": "ordenId",
+      "value": ""
+    }
+  ]
+}

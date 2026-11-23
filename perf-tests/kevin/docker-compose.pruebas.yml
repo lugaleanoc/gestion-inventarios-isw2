@@ -1,0 +1,7 @@
+services:
+  proveedores:
+    ports:
+      - "8002:8000"
+  reportes:
+    ports:
+      - "8003:8000"

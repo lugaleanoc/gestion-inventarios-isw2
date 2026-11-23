@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: JAK Inventory — API Gateway (con autenticación integrada)
-  version: 1.0.0
+  version: 1.1.0
   description: |
     Único punto de entrada al sistema (RNF09). Este contrato documenta SOLO los
     endpoints propios del Gateway: autenticación, usuarios, roles y tiendas web.
@@ -10,6 +10,13 @@ info:
     reenvía al microservicio correspondiente, que se localiza en el Service Discovery.
     Los endpoints de cada servicio están en su propio contrato.
 
+    **Headers que agrega al reenviar:** el Gateway es el único que valida el token. Al reenviar
+    una petición agrega los headers `X-Empresa-Id`, `X-Usuario-Id` y `X-Rol` con los datos del
+    token, y no reenvía el token: los demás servicios no lo reciben ni lo validan. Además borra
+    los headers de identidad y `X-Servicio-Origen` que mande el cliente. Si los servicios no
+    reciben los headers responden `401` (`FALTAN_HEADERS`); si el rol o el origen no tienen
+    permiso, `403` (`SIN_PERMISO`).
+
     **Rutas internas bloqueadas desde afuera (decisión 7):** el Gateway NO enruta estas
     rutas; solo se llaman dentro de la red de Docker con `X-Servicio-Origen` y `X-Empresa-Id`:
     - `POST /api/configuracion/empresas`
@@ -17,6 +24,8 @@ info:
     - `POST /api/inventario/stock/entradas`
     - `POST /api/reposicion/solicitudes/automaticas`
     - `POST /api/balance/movimientos/ventas`
+
+    Si un cliente las pide por el Gateway, responde `403` con el error `SIN_PERMISO`.
 
     **Contenido del JWT (decisión 2):** `empresaId`, `usuarioId` y `rol`.
     La empresa nunca viaja en la URL (RNF19).
