@@ -17,7 +17,7 @@ ENCABEZADO = [
 
 def leer():
     filas = []
-    for ruta in sorted(glob.glob(os.path.join(CARPETA, "t*_stats.csv"))):
+    for ruta in sorted(glob.glob(os.path.join(CARPETA, "p*_stats.csv"))):
         clave = os.path.basename(ruta).split("_")[0].lower()
         if clave not in PRUEBAS:
             continue
