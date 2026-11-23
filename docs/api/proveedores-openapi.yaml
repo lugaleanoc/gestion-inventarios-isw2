@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: JAK Inventory — Microservicio de Proveedores
-  version: 1.0.0
+  version: 1.1.0
   description: |
     Administra los proveedores de la empresa, sus datos de contacto y condiciones,
     y qué productos surte cada uno (RF03).
@@ -14,6 +14,12 @@ info:
     Este servicio no llama a ningún otro. No valida que el `productoId` exista en
     Inventario, para no crear una dependencia circular; esa validación la hace el panel web.
 
+    **Identidad:** este servicio no recibe ni valida el token. El API Gateway lo valida y envía
+    `X-Empresa-Id`, `X-Usuario-Id` y `X-Rol`; las llamadas internas envían `X-Servicio-Origen` y
+    `X-Empresa-Id`. Sin los headers responde `401` (`FALTAN_HEADERS`); si el rol o el servicio
+    de origen no tienen permiso, `403` (`SIN_PERMISO`). Solo Reposición e Inventario pueden
+    hacer las consultas internas.
+
     **Roles:** `administrador` y `encargado_bodega` administran; `vendedor` solo consulta.
 
     **Eliminación (decisión 8):** proveedores y asociaciones se dan de baja lógica.
@@ -21,7 +27,7 @@ servers:
 - url: http://localhost:8080
   description: A través del API Gateway
 - url: http://proveedores-service:8000
-  description: Dirección interna en la red de Docker (ajustar puerto)
+  description: Dirección interna en la red de Docker
 tags:
 - name: Proveedores
   description: Datos de los proveedores
@@ -37,9 +43,11 @@ paths:
       summary: Listar y buscar proveedores
       operationId: listarProveedores
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       parameters:
       - name: q
         in: query
@@ -76,7 +84,9 @@ paths:
       description: 'Roles: `administrador`, `encargado_bodega`.'
       operationId: crearProveedor
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       requestBody:
         required: true
         content:
@@ -110,9 +120,11 @@ paths:
       description: Un proveedor dado de baja responde 200 con `activo = false`.
       operationId: consultarProveedor
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       responses:
         '200':
           description: Proveedor
@@ -129,7 +141,9 @@ paths:
       description: 'Roles: `administrador`, `encargado_bodega`.'
       operationId: actualizarProveedor
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       requestBody:
         required: true
         content:
@@ -156,7 +170,9 @@ paths:
       description: 'Rol: `administrador`.'
       operationId: darBajaProveedor
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       responses:
         '200':
           description: Proveedor dado de baja
@@ -177,9 +193,11 @@ paths:
       summary: Productos que surte un proveedor
       operationId: listarProductosProveedor
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       responses:
         '200':
           description: Asociaciones activas
@@ -201,7 +219,9 @@ paths:
         (el que usa Reposición) y el anterior deja de serlo.
       operationId: asociarProducto
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       requestBody:
         required: true
         content:
@@ -247,7 +267,9 @@ paths:
       description: 'Roles: `administrador`, `encargado_bodega`.'
       operationId: desasociarProducto
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       parameters:
       - $ref: '#/components/parameters/ProveedorId'
       - name: productoId
@@ -276,9 +298,11 @@ paths:
         `principal`. Responde 404 si el producto no tiene ningún proveedor.
       operationId: proveedoresDeProducto
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       - servicioOrigen: []
-        empresaInterna: []
+        empresa: []
       parameters:
       - name: productoId
         in: path
@@ -339,27 +363,6 @@ components:
         minimum: 1
         maximum: 100
         default: 20
-    FechaDesde:
-      name: fechaDesde
-      in: query
-      schema:
-        type: string
-        format: date
-      example: '2026-10-01'
-    FechaHasta:
-      name: fechaHasta
-      in: query
-      schema:
-        type: string
-        format: date
-      example: '2026-10-31'
-    LocalIdFiltro:
-      name: localId
-      in: query
-      description: Filtra por local
-      schema:
-        type: integer
-      example: 1
     ProveedorId:
       name: proveedorId
       in: path
@@ -464,21 +467,26 @@ components:
         activo:
           type: boolean
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: Token emitido por el API Gateway. Contiene `empresaId`, `usuarioId` y `rol`.
+    empresa:
+      type: apiKey
+      in: header
+      name: X-Empresa-Id
+      description: Empresa de la petición. La pone el Gateway (a partir del token) o el servicio que hace la llamada interna.
+    usuario:
+      type: apiKey
+      in: header
+      name: X-Usuario-Id
+      description: Usuario que hace la petición. Lo pone el Gateway a partir del token.
+    rol:
+      type: apiKey
+      in: header
+      name: X-Rol
+      description: Rol del usuario (administrador, vendedor, encargado_bodega o tienda_web). Lo pone el Gateway a partir del token.
     servicioOrigen:
       type: apiKey
       in: header
       name: X-Servicio-Origen
-      description: Nombre del microservicio que llama. Solo red interna de Docker (el Gateway no enruta estas llamadas).
-    empresaInterna:
-      type: apiKey
-      in: header
-      name: X-Empresa-Id
-      description: Empresa en nombre de la cual se hace la llamada interna.
+      description: Nombre del microservicio que llama. Solo red interna de Docker (el Gateway borra este header de las peticiones externas).
   responses:
     DatosInvalidos:
       description: Los datos enviados no son válidos
@@ -487,31 +495,19 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     NoAutenticado:
-      description: Falta el token (o los headers internos) o no es válido
+      description: Faltan las cabeceras de identidad que pone el Gateway (FALTAN_HEADERS)
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
     SinPermiso:
-      description: El rol (o el servicio de origen) no permite esta operación
+      description: El rol (o el servicio de origen) no permite esta operación (SIN_PERMISO)
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
     NoEncontrado:
       description: El recurso no existe o pertenece a otra empresa
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    Conflicto:
-      description: La operación choca con el estado actual de los datos
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    ServicioNoDisponible:
-      description: Un servicio del que depende no respondió después de 3 intentos (circuit breaker)
       content:
         application/json:
           schema:
