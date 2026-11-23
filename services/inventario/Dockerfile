@@ -41,4 +41,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
 #   -w 2            dos procesos atendiendo peticiones
 #   -b 0.0.0.0:8000 escucha en todas las interfaces, no solo dentro del contenedor
 #   wsgi:app        el archivo wsgi.py y su variable app
-CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:8000", "--access-logfile", "-", "wsgi:app"]
+CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:8000", "--access-logfile", "-", "wsgi:app"]
