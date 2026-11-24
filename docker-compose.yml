@@ -50,7 +50,9 @@ services:
       DB_NOMBRE: inventario_db
       DB_USUARIO: inventario
       DB_CLAVE: inventario
-      CREAR_TABLAS: "true"
+      # Las tablas las crea inicializa_bd.py antes de Gunicorn,
+      # asi que la aplicacion no debe volver a crearlas.
+      CREAR_TABLAS: "false"
       CONFIGURACION_URL: http://configuracion-service:8000
       PROVEEDORES_URL: http://proveedores-service:8000
       REPOSICION_URL: http://reposicion-service:8000
@@ -88,7 +90,9 @@ services:
       DB_NOMBRE: reposicion_db
       DB_USUARIO: reposicion
       DB_CLAVE: reposicion
-      CREAR_TABLAS: "true"
+      # Las tablas las crea inicializa_bd.py antes de Gunicorn,
+      # asi que la aplicacion no debe volver a crearlas.
+      CREAR_TABLAS: "false"
       INVENTARIO_URL: http://inventario-service:8000
       PROVEEDORES_URL: http://proveedores-service:8000
       CONFIGURACION_URL: http://configuracion-service:8000
@@ -130,7 +134,9 @@ services:
       DB_NOMBRE: configuracion_db
       DB_USUARIO: configuracion
       DB_CLAVE: configuracion
-      CREAR_TABLAS: "true"
+      # Las tablas las crea inicializa_bd.py antes de Gunicorn,
+      # asi que la aplicacion no debe volver a crearlas.
+      CREAR_TABLAS: "false"
       STOCK_MINIMO_POR_DEFECTO: 5     # stock minimo con el que se crea cada empresa
     depends_on:
       mysql:
@@ -150,7 +156,9 @@ services:
       DB_NOMBRE: ventas_db
       DB_USUARIO: ventas
       DB_CLAVE: ventas
-      CREAR_TABLAS: "true"
+      # Las tablas las crea inicializa_bd.py antes de Gunicorn,
+      # asi que la aplicacion no debe volver a crearlas.
+      CREAR_TABLAS: "false"
       INVENTARIO_URL: http://inventario-service:8000
       BALANCE_URL: http://balance-service:8000
       TIMEOUT_SEGUNDOS: 3
@@ -180,7 +188,9 @@ services:
       DB_NOMBRE: balance_db
       DB_USUARIO: balance
       DB_CLAVE: balance
-      CREAR_TABLAS: "true"
+      # Las tablas las crea inicializa_bd.py antes de Gunicorn,
+      # asi que la aplicacion no debe volver a crearlas.
+      CREAR_TABLAS: "false"
     depends_on:
       mysql:
         condition: service_healthy

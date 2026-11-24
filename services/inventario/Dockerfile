@@ -37,8 +37,21 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"
 
-# Comando con el que arranca el contenedor.
-#   -w 1            un proceso atendiendo peticiones
+# Comando con el que arranca el contenedor. Son dos pasos, en orden:
+#
+#   1. init_db.py crea las tablas UNA SOLA VEZ.
+#   2. exec gunicorn arranca el servidor.
+#
+# El orden importa. Antes, las tablas las creaba la aplicacion al arrancar,
+# y Gunicorn ejecuta ese codigo una vez por proceso: con dos procesos, los
+# dos intentaban crear las mismas tablas al tiempo y MySQL respondia
+# (1050, "Table 'categorias' already exists"). Separando los dos pasos, la
+# base deja de depender de cuantos procesos haya.
+#
+#   -w 2            dos procesos atendiendo peticiones a la vez
 #   -b 0.0.0.0:8000 escucha en todas las interfaces, no solo dentro del contenedor
 #   wsgi:app        el archivo wsgi.py y su variable app
-CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:8000", "--access-logfile", "-", "wsgi:app"]
+#
+# exec hace que Gunicorn reemplace al shell, para que reciba directamente
+# la senal de apagado cuando Docker detiene el contenedor.
+CMD ["sh", "-c", "python init_db.py && exec gunicorn -w 2 -b 0.0.0.0:8000 --access-logfile - wsgi:app"]
