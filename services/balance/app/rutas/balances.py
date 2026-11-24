@@ -95,13 +95,30 @@ def _calcular(empresa_id, desde, hasta, local_id=None):
     return balances
 
 
+def _consolidar(balances, fecha):
+    """Junta en un solo balance los de todos los locales de un dia (localId = None)."""
+    total = _balance_vacio(None, fecha)
+    for balance in balances.values():
+        for seccion in ("ingresos", "egresos", "ajustes", "disponible", "ventasPorCanal"):
+            for clave, valor in balance[seccion].items():
+                total[seccion][clave] = round(total[seccion][clave] + valor, 2)
+    return total
+
+
 @bp.get("/diario")
 @permitir(roles=[ADMIN, VENDEDOR], servicios=["reportes"])
 def diario():
-    """GET /api/balance/diario?localId=1&fecha=AAAA-MM-DD  (los dos son obligatorios)"""
-    local_id = entero_de_url("localId", obligatorio=True)
+    """GET /api/balance/diario?fecha=AAAA-MM-DD[&localId=1]
+
+    fecha es obligatoria. Con localId, el balance de ese local; sin localId,
+    el consolidado de todos los locales de la empresa (localId = null), que
+    es el que usa el dashboard general de Reportes.
+    """
+    local_id = entero_de_url("localId")
     fecha = fecha_de_url("fecha", obligatorio=True)
     balances = _calcular(empresa_actual(), fecha, fecha, local_id)
+    if local_id is None:
+        return jsonify(_consolidar(balances, fecha.isoformat())), 200
     # Si el dia no tuvo movimientos, el balance sale en ceros (no es un error).
     balance = balances.get((fecha.isoformat(), local_id), _balance_vacio(local_id, fecha.isoformat()))
     return jsonify(balance), 200

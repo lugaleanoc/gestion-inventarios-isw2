@@ -52,7 +52,7 @@ lentas. Un p95 de 70 ms quiere decir que el 95 % de las peticiones tardó
 
 ### Condiciones
 
-- Sin API Gateway (todavía no existe): Locust llama directo a cada servicio
+- Sin API Gateway, para medir una pieza a la vez: Locust llama directo a cada servicio
   y envía en cada petición los headers que pondría el Gateway
   (`X-Empresa-Id`, `X-Usuario-Id`, `X-Rol`) o los de una llamada interna
   (`X-Servicio-Origen`, `X-Empresa-Id`).
@@ -93,38 +93,44 @@ python -m locust -f locustfile.py E3RegistrarVenta
 ids en `datos_prueba.json`, que `locustfile.py` lee. Si Inventario no está
 corriendo, se salta su parte.
 
-Los CSV de cada prueba quedan en `resultados/` (no se suben a GitHub) y
-`resumir.py` arma la tabla de la sección 3.
+Los CSV de cada prueba quedan en `resultados/` y `resumir.py` arma la tabla
+de la sección 3.
 
 ## 3. Resultados
 
-Fecha: ____ · Equipo: ____ (CPU / RAM) · Duración: 1 min por prueba ·
-Sin API Gateway · Inventario simulado.
+Fecha: 23 de noviembre de 2026 · Equipo: AMD Ryzen 7 7730U (16 hilos), 14 GB de RAM · Duración: 1 min por prueba · Sin API Gateway · Inventario simulado.
 
 | Prueba | Endpoint | Escenario | Peticiones | Req/s | Prom. (ms) | p95 (ms) | Max (ms) | Errores | Cumple RNF06 |
 |---|---|---|---|---|---|---|---|---|---|
-| P01 | E1 | normal |  |  |  |  |  |  |  |
-| P02 | E1 | pico |  |  |  |  |  |  |  |
-| P03 | E1 | estres |  |  |  |  |  |  |  |
-| P04 | E2 | normal |  |  |  |  |  |  |  |
-| P05 | E2 | pico |  |  |  |  |  |  |  |
-| P06 | E2 | estres |  |  |  |  |  |  |  |
-| P07 | E3 | normal |  |  |  |  |  |  |  |
-| P08 | E3 | pico |  |  |  |  |  |  |  |
-| P09 | E3 | estres |  |  |  |  |  |  |  |
-| P10 | E4 | normal |  |  |  |  |  |  |  |
-| P11 | E4 | pico |  |  |  |  |  |  |  |
-| P12 | E4 | estres |  |  |  |  |  |  |  |
-| P13 | E5 | normal |  |  |  |  |  |  |  |
-| P14 | E5 | pico |  |  |  |  |  |  |  |
-| P15 | E5 | estres |  |  |  |  |  |  |  |
+| P01 | E1 | normal | 1156 | 19.6 | 7 | 9 | 17 | 0.0% | Sí |
+| P02 | E1 | pico | 5774 | 97.8 | 7 | 10 | 61 | 0.0% | Sí |
+| P03 | E1 | estres | 16899 | 286.0 | 11 | 19 | 162 | 0.0% | Sí |
+| P04 | E2 | normal | 1146 | 19.4 | 15 | 18 | 51 | 0.0% | Sí |
+| P05 | E2 | pico | 5735 | 97.1 | 19 | 32 | 170 | 0.0% | Sí |
+| P06 | E2 | estres | 10807 | 182.9 | 576 | 730 | 896 | 0.0% | Sí |
+| P07 | E3 | normal | 1103 | 18.7 | 56 | 89 | 179 | 0.0% | Sí |
+| P08 | E3 | pico | 2459 | 41.6 | 1346 | 1500 | 1760 | 0.0% | Sí |
+| P09 | E3 | estres | 1521 | 25.7 | 8353 | 16000 | 18412 | 0.0% | No |
+| P10 | E4 | normal | 1069 | 18.1 | 94 | 34 | 5041 | 0.0% | Sí |
+| P11 | E4 | pico | 5483 | 92.8 | 64 | 180 | 332 | 0.0% | Sí |
+| P12 | E4 | estres | 8562 | 144.9 | 973 | 1300 | 1371 | 0.0% | Sí |
+| P13 | E5 | normal | 1086 | 18.4 | 69 | 110 | 228 | 0.0% | Sí |
+| P14 | E5 | pico | 3824 | 64.7 | 503 | 840 | 1726 | 0.0% | Sí |
+| P15 | E5 | estres | 3810 | 64.5 | 3344 | 3900 | 4047 | 0.0% | No |
+
+Los CSV de cada prueba están en `resultados/` (`PNN_..._stats.csv` y `_stats_history.csv`).
 
 ### Análisis
 
-_(Completar con los resultados: qué endpoints escalan bien, cuál es el cuello
-de botella, en qué escenario empieza a fallar y por qué.)_
+- **13 de las 15 pruebas cumplen el RNF06, y las 15 terminaron con 0 % de errores**: ninguna petición se perdió, incluso cuando el servicio se saturó.
+- **E1 (lectura de configuración) escala casi perfecto:** al pasar de 20 a 300 usuarios el throughput subió de 19,6 a 286 req/s y el p95 solo pasó de 9 a 19 ms.
+- **E2 (escritura) cumple, pero muestra el límite de la base:** con 300 usuarios el throughput se quedó en 183 req/s (en vez de ~290) y el p95 subió a 730 ms, porque cada petición escribe en MySQL.
+- **E3 (registrar venta) es el cuello de botella.** Cada venta guarda en la base de Ventas y espera la respuesta de Balance por REST. Con 2 workers síncronos de gunicorn solo se atienden 2 ventas a la vez, así que el throughput no pasa de ~42 req/s. En pico el p95 llegó a 1.500 ms (cumple, pero cerca del límite) y en estrés la fila creció hasta un p95 de 16 s: no cumple. Aun así, todas las ventas quedaron registradas.
+- **E4 (resumen de ventas) cumple en los tres escenarios** (p95 de 1.300 ms en estrés). El máximo de 5 s en P10 fue la primera petición, con el servicio recién iniciado; por eso en esa prueba el promedio quedó por encima del p95.
+- **E5 (balance diario) se satura desde el escenario pico:** se queda en ~65 req/s con 100 y con 300 usuarios, y en estrés el p95 llega a 3,9 s, por lo que no cumple. La consulta suma todos los movimientos del día, y E3 acababa de crear unas 9.700 ventas, así que cada petición agrupa unas 9.700 filas.
 
-### Optimizaciones propuestas (comparación antes/después)
+### Optimizaciones propuestas (comparación antes/después en la Entrega 4)
 
-_(Completar según el análisis. Ideas a evaluar: más workers de gunicorn,
-índices en MySQL, repetir las pruebas a través del API Gateway.)_
+- Agregar hilos a gunicorn (--threads) en Ventas y Balance, para que un worker que espera la respuesta de otro servicio no bloquee las demás peticiones.
+- En Balance Diario, guardar los totales del día por local y medio de pago a medida que llegan los movimientos, en lugar de sumarlos en cada consulta, o usar una caché corta.
+- Repetir E3 con el Inventario real y a través del Gateway, para medir el recorrido completo de una venta.
