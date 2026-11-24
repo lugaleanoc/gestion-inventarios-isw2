@@ -7,7 +7,7 @@ peticiones (mejor medida que el promedio, porque el promedio
 esconde los casos lentos). **Throughput** son peticiones
 atendidas por segundo. **Error** es el porcentaje que fallo.
 
-## Carga normal (10 usuarios)
+## Carga normal (20 usuarios)
 
 | Prueba | Endpoint | Peticiones | Throughput | p50 | p95 | p99 | Error | Resultado |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
@@ -17,7 +17,7 @@ atendidas por segundo. **Error** es el porcentaje que fallo.
 | E4-normal | Resumen de reposicion (Reposicion, lectura) | 1155 | 19.6/s | 10 ms | 11 ms | 13 ms | 0.00 % | CUMPLE |
 | E5-normal | Solicitud automatica (Reposicion, escritura) | 1148 | 19.5/s | 9 ms | 16 ms | 37 ms | 0.00 % | CUMPLE |
 
-## Carga pico (50 usuarios)
+## Carga pico (100 usuarios)
 
 | Prueba | Endpoint | Peticiones | Throughput | p50 | p95 | p99 | Error | Resultado |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
@@ -27,7 +27,7 @@ atendidas por segundo. **Error** es el porcentaje que fallo.
 | E4-pico | Resumen de reposicion (Reposicion, lectura) | 5790 | 98.0/s | 3 ms | 11 ms | 23 ms | 0.00 % | CUMPLE |
 | E5-pico | Solicitud automatica (Reposicion, escritura) | 5726 | 97.0/s | 6 ms | 13 ms | 49 ms | 0.00 % | CUMPLE |
 
-## Estres (150 usuarios)
+## Estres (300 usuarios)
 
 | Prueba | Endpoint | Peticiones | Throughput | p50 | p95 | p99 | Error | Resultado |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |

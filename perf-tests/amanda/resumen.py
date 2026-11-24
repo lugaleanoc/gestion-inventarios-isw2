@@ -29,9 +29,9 @@ NOMBRES = {
     "E4": "Resumen de reposicion (Reposicion, lectura)",
     "E5": "Solicitud automatica (Reposicion, escritura)",
 }
-ESCENARIOS = {"normal": "Carga normal (10 usuarios)",
-              "pico": "Carga pico (50 usuarios)",
-              "estres": "Estres (150 usuarios)"}
+ESCENARIOS = {"normal": "Carga normal (20 usuarios)",
+              "pico": "Carga pico (100 usuarios)",
+              "estres": "Estres (300 usuarios)"}
 
 
 def numero(fila, *nombres):
