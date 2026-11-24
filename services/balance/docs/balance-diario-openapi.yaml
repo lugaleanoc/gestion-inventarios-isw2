@@ -262,10 +262,12 @@ paths:
   /api/balance/diario:
     get:
       tags: [Balances]
-      summary: Balance diario de un local
+      summary: Balance diario de un local o de toda la empresa
       description: |
         Lo que ingresó, lo que salió y el valor disponible en cada medio de pago
         al finalizar la jornada (RF21, RF23). Incluye los ajustes.
+        Sin `localId` devuelve el consolidado de todos los locales de la empresa
+        (`localId: null`); es el que usa el dashboard general de Reportes.
         Externo: `administrador`, `vendedor`. Interno: Reportes.
       operationId: balanceDiario
       security:
@@ -277,7 +279,8 @@ paths:
       parameters:
         - name: localId
           in: query
-          required: true
+          required: false
+          description: Opcional. Sin él, consolida todos los locales.
           schema:
             type: integer
           example: 1
@@ -595,6 +598,8 @@ components:
       properties:
         localId:
           type: integer
+          nullable: true
+          description: null en el balance consolidado de todos los locales
           example: 1
         fecha:
           type: string
