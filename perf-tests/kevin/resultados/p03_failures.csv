@@ -1,0 +1,2 @@
+Method,Name,Error,Occurrences,First Seen,Last Seen
+POST,POST /api/auth/login,CatchResponseError('0: '),16,2026-11-24T02:10:45Z,2026-11-24T02:11:00Z

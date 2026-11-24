@@ -1,0 +1,16 @@
+# Librerias del microservicio de Ventas (versiones fijas, iguales a Configuracion).
+Flask==3.0.3
+Flask-SQLAlchemy==3.1.1
+SQLAlchemy==2.1.8
+# Driver de MySQL; cryptography lo necesita para el login de MySQL 8 (caching_sha2_password).
+PyMySQL==1.1.1
+cryptography==50.0.2
+# Servidor de produccion dentro del contenedor.
+gunicorn==22.0.0
+# Base de zonas horarias (America/Bogota): la imagen slim no la trae.
+tzdata==2026.6
+# Pagina de Swagger en /docs/ (RNF08), igual que en Configuracion.
+flasgger==0.9.7.1
+PyYAML==6.0.3
+# Para llamar a Inventario y a Balance Diario por HTTP.
+requests==2.32.3
