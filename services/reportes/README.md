@@ -52,7 +52,7 @@ Con Docker Compose: pegar `docker-compose.snippet.yml` dentro de `services:` y a
 
 ## Variables de entorno
 
-DB_HOST (reportes-db), DB_PORT, DB_NAME (reportes_db), DB_USER, DB_PASSWORD, CACHE_TTL_SEGUNDOS (60), CACHE_TTL_PARCIAL_SEGUNDOS (10), TIMEOUT_CONEXION (2), TIMEOUT_LECTURA (4), ZONA_HORARIA_HORAS (-5). Direcciones de los servicios: CONFIGURACION_URL, INVENTARIO_URL, VENTAS_URL, REPOSICION_URL, BALANCE_URL (por defecto `http://<nombre>-service:8000`).
+DB_HOST (reportes-db), DB_PORT, DB_NAME (reportes_db), DB_USER, DB_PASSWORD, CACHE_TTL_SEGUNDOS (60), CACHE_TTL_PARCIAL_SEGUNDOS (10), TIMEOUT_CONEXION (2), TIMEOUT_LECTURA (4), ZONA_HORARIA_HORAS (-5). Resiliencia: REINTENTOS (3), REINTENTO_ESPERA (0.2 s, se duplica en cada reintento), CIRCUITO_FALLAS (3), CIRCUITO_SEGUNDOS (5): tras 3 fallas seguidas el circuito de ese servicio se abre 5 s y no se consulta y esa fuente sale en fuentesNoDisponibles. Direcciones de los servicios: CONFIGURACION_URL, INVENTARIO_URL, VENTAS_URL, REPOSICION_URL, BALANCE_URL (por defecto `http://<nombre>-service:8000`).
 
 ## Supuestos que hay que confirmar con Amanda y Jasmin
 

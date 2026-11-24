@@ -61,5 +61,9 @@ def ajustes():
         "TIMEOUT_LECTURA": float(os.getenv("TIMEOUT_LECTURA", "4")),
         "CACHE_TTL_SEGUNDOS": int(os.getenv("CACHE_TTL_SEGUNDOS", "60")),
         "CACHE_TTL_PARCIAL_SEGUNDOS": int(os.getenv("CACHE_TTL_PARCIAL_SEGUNDOS", "10")),
+        "REINTENTOS": int(os.getenv("REINTENTOS", "3")),
+        "REINTENTO_ESPERA": float(os.getenv("REINTENTO_ESPERA", "0.2")),
+        "CIRCUITO_FALLAS": int(os.getenv("CIRCUITO_FALLAS", "3")),
+        "CIRCUITO_SEGUNDOS": float(os.getenv("CIRCUITO_SEGUNDOS", "5")),
         "ZONA_HORARIA_HORAS": int(os.getenv("ZONA_HORARIA_HORAS", "-5")),
     }

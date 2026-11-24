@@ -2,6 +2,7 @@ import logging
 import os
 import tempfile
 import threading
+import time
 import unittest
 
 from flask import Flask, jsonify, request
@@ -75,7 +76,7 @@ def crear_upstream_falso():
                 "valorTotal": 9000000,
                 "cantidadProductos": 40,
                 "productosAgotados": [{"productoId": 3, "nombre": "Arroz", "stockTotal": 0}],
-                "productosBajoMinimo": 4,
+                "productosBajoMinimo": [{"productoId": 5, "nombre": "Pan", "stockTotal": 2, "stockMinimo": 10}],
                 "mayorRotacion": [{"productoId": 1, "nombre": "Leche", "unidadesSalidas": 50}],
                 "menorRotacion": [{"productoId": 9, "nombre": "Sal", "unidadesSalidas": 1}],
             }
@@ -102,10 +103,15 @@ def crear_upstream_falso():
     @falso.get("/api/balance/reporte")
     def reporte_balance():
         return jsonify(
-            [
-                {"localId": 1, "fecha": "2026-11-18", "disponible": totales(80, 50, 25)},
-                {"localId": 1, "fecha": "2026-11-19", "disponible": totales(20, 10, 5)},
-            ]
+            {
+                "fechaDesde": request.args.get("fechaDesde"),
+                "fechaHasta": request.args.get("fechaHasta"),
+                "balances": [
+                    {"localId": 1, "fecha": "2026-11-18", "ingresos": totales(100, 50, 25), "egresos": totales(20, 0, 0), "disponible": totales(80, 50, 25)},
+                    {"localId": 1, "fecha": "2026-11-19", "ingresos": totales(30, 10, 5), "egresos": totales(10, 0, 0), "disponible": totales(100, 60, 30)},
+                ],
+                "totales": totales(0, 0, 0),
+            }
         )
 
     servidor = make_server("127.0.0.1", 0, falso, threaded=True)
@@ -145,6 +151,8 @@ class PruebasReportes(unittest.TestCase):
                 "SERVICIOS": {n: self.url for n in ("configuracion", "inventario", "ventas", "reposicion", "balance")},
                 "TIMEOUT_CONEXION": 1,
                 "TIMEOUT_LECTURA": 3,
+                "REINTENTO_ESPERA": 0,
+                "CIRCUITO_SEGUNDOS": 0.3,
             }
         )
         self.cli = self.app.test_client()
@@ -162,7 +170,7 @@ class PruebasReportes(unittest.TestCase):
         return [c for c in self.falso.llamadas if c[0].startswith(prefijo)]
 
     def test_health_es_publico(self):
-        self.assertEqual(self.cli.get("/health").get_json()["servicio"], "reportes-service")
+        self.assertEqual(self.cli.get("/health").get_json()["servicio"], "reportes")
 
     def test_sin_headers_da_401(self):
         r = self.cli.get(BASE + "/dashboard")
@@ -204,15 +212,16 @@ class PruebasReportes(unittest.TestCase):
         self.assertEqual(datos["fuentesNoDisponibles"], [])
         self.assertEqual(datos["totalVentas"], 1500000)
         self.assertEqual(datos["porCanal"]["tienda_web"], 500000)
-        self.assertEqual(datos["localId"], 2)
+        self.assertEqual(datos["porMedioPago"]["tarjeta"], 600000)
         ruta, params, cab = self.llamadas_a("/api/ventas/resumen")[0]
         self.assertEqual(params, {"fechaDesde": "2026-11-01", "fechaHasta": "2026-11-19", "localId": "2"})
         self.assertEqual(cab["X-Servicio-Origen"], "reportes")
         self.assertEqual(cab["X-Empresa-Id"], "1")
 
     def test_periodo_por_defecto_son_30_dias(self):
-        r = self.get("/ventas-por-canal").get_json()
-        desde, hasta = r["fechaDesde"], r["fechaHasta"]
+        self.get("/ventas-por-canal")
+        params = self.llamadas_a("/api/ventas/resumen")[0][1]
+        desde, hasta = params["fechaDesde"], params["fechaHasta"]
         from datetime import date
 
         self.assertEqual((date.fromisoformat(hasta) - date.fromisoformat(desde)).days, 29)
@@ -233,24 +242,25 @@ class PruebasReportes(unittest.TestCase):
     def test_inventario(self):
         datos = self.get("/inventario", BOD).get_json()
         self.assertEqual(datos["valorTotal"], 9000000)
-        self.assertEqual(datos["productosAgotados"], 1)
-        self.assertEqual(datos["productosBajoMinimo"], 4)
+        self.assertEqual(datos["cantidadProductos"], 40)
         self.assertEqual(datos["mayorRotacion"], [{"productoId": 1, "nombre": "Leche", "valor": 50}])
         self.assertEqual(datos["menorRotacion"][0]["nombre"], "Sal")
 
     def test_productos_agotados(self):
         datos = self.get("/productos-agotados", BOD).get_json()
-        self.assertEqual(datos["total"], 1)
-        self.assertEqual(datos["productos"], [{"productoId": 3, "nombre": "Arroz", "valor": 0}])
+        self.assertEqual(datos["agotados"], [{"productoId": 3, "nombre": "Arroz", "valor": 0}])
+        self.assertEqual(datos["bajoMinimo"], [{"productoId": 5, "nombre": "Pan", "valor": 2}])
 
     def test_reposiciones(self):
         datos = self.get("/reposiciones", BOD).get_json()
-        self.assertEqual(datos["porEstado"], {"pendiente": 2, "aprobada": 1, "en_orden": 1})
-        self.assertEqual(datos["total"], 4)
+        self.assertEqual(
+            datos["porEstado"], {"pendiente": 2, "aprobada": 1, "en_orden": 1, "recibida": 0, "rechazada": 0}
+        )
 
     def test_balance_suma_el_disponible_por_medio_de_pago(self):
         datos = self.get("/balance?localId=1", VEN).get_json()
-        self.assertEqual(len(datos["balances"]), 2)
+        self.assertEqual(datos["ingresos"], {"efectivo": 130, "tarjeta": 60, "qr": 30, "total": 220})
+        self.assertEqual(datos["egresos"]["efectivo"], 30)
         self.assertEqual(datos["disponible"], {"efectivo": 100, "tarjeta": 60, "qr": 30, "total": 190})
 
     def test_cache_segunda_llamada_no_consulta_a_los_servicios(self):
@@ -287,17 +297,35 @@ class PruebasReportes(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         datos = r.get_json()
         self.assertEqual(datos["fuentesNoDisponibles"], ["balance"])
-        self.assertIsNone(datos["balances"])
-        self.assertIsNone(datos["disponible"])
+        self.assertEqual(datos["disponible"]["total"], 0)
 
     def test_reporte_parcial_con_servicio_apagado(self):
         self.app.config["SERVICIOS"]["balance"] = "http://127.0.0.1:9"
         datos = self.get("/dashboard").get_json()
         self.assertEqual(datos["fuentesNoDisponibles"], ["balance"])
-        self.assertIsNone(datos["metricas"]["balance_diario"])
-        self.assertIsNone(datos["metricas"]["ingresos_egresos"])
-        self.assertEqual(datos["metricas"]["valor_inventario"], {"valorTotal": 9000000})
-        self.assertEqual(datos["metricas"]["estado_reposiciones"]["total"], 4)
+        self.assertEqual(datos["metricas"]["balance_diario"], {})
+        self.assertEqual(datos["metricas"]["ingresos_egresos"]["ingresos"]["total"], 0)
+        self.assertEqual(datos["metricas"]["valor_inventario"], 9000000)
+        self.assertEqual(datos["metricas"]["estado_reposiciones"]["pendiente"], 2)
+
+    def test_reintenta_3_veces_y_abre_el_circuito(self):
+        self.app.config["SERVICIOS"]["reposicion"] = "http://127.0.0.1:9"
+        intentos = []
+        original = self.app.extensions["sesion_http"].get
+
+        def contando(*args, **kwargs):
+            intentos.append(1)
+            return original(*args, **kwargs)
+
+        self.app.extensions["sesion_http"].get = contando
+        datos = self.get("/reposiciones?refrescar=true").get_json()
+        self.assertEqual(datos["fuentesNoDisponibles"], ["reposicion"])
+        self.assertEqual(len(intentos), 3)
+        self.get("/reposiciones?refrescar=true")
+        self.assertEqual(len(intentos), 3)
+        self.app.config["SERVICIOS"]["reposicion"] = self.url
+        time.sleep(0.4)
+        self.assertEqual(self.get("/reposiciones?refrescar=true").get_json()["fuentesNoDisponibles"], [])
 
     def test_el_reporte_parcial_se_recupera_con_refrescar(self):
         self.falso.fallar.add("ventas")
@@ -311,9 +339,9 @@ class PruebasReportes(unittest.TestCase):
     def test_dashboard_completo(self):
         datos = self.get("/dashboard?localId=1", VEN).get_json()
         self.assertEqual(list(datos["metricas"]), TODAS)
-        self.assertEqual(datos["metricas"]["ventas_por_canal"]["totalVentas"], 1500000)
-        self.assertEqual(datos["metricas"]["productos_baja_rotacion"]["productos"][0]["nombre"], "Sal")
-        self.assertEqual(datos["metricas"]["productos_agotados"]["total"], 1)
+        self.assertEqual(datos["metricas"]["ventas_por_canal"], {"tienda_fisica": 1000000, "tienda_web": 500000})
+        self.assertEqual(datos["metricas"]["productos_baja_rotacion"][0]["nombre"], "Sal")
+        self.assertEqual(datos["metricas"]["productos_agotados"], 1)
         self.assertEqual(datos["metricas"]["balance_diario"]["disponible"]["total"], 155)
         self.assertEqual(datos["metricas"]["ingresos_egresos"]["ingresos"]["total"], 175)
         self.assertEqual(datos["fuentesNoDisponibles"], [])
@@ -331,12 +359,13 @@ class PruebasReportes(unittest.TestCase):
             "metricas": ["ventas_por_canal"],
             "preferencias": {"localPorDefecto": 2, "periodoPorDefecto": "hoy"},
         }
-        datos = self.get("/dashboard").get_json()
-        self.assertEqual(datos["localId"], 2)
-        self.assertEqual(datos["fechaDesde"], datos["fechaHasta"])
-        self.assertEqual(self.llamadas_a("/api/ventas/resumen")[0][1]["localId"], "2")
-        explicito = self.get("/dashboard?localId=1").get_json()
-        self.assertEqual(explicito["localId"], 1)
+        self.get("/dashboard")
+        params = self.llamadas_a("/api/ventas/resumen")[0][1]
+        self.assertEqual(params["localId"], "2")
+        self.assertEqual(params["fechaDesde"], params["fechaHasta"])
+        self.falso.llamadas.clear()
+        self.get("/dashboard?localId=1")
+        self.assertEqual(self.llamadas_a("/api/ventas/resumen")[0][1]["localId"], "1")
 
     def test_dashboard_sin_configuracion_muestra_todas_las_metricas(self):
         self.falso.fallar.add("configuracion")
@@ -350,10 +379,10 @@ class PruebasReportes(unittest.TestCase):
 
     def test_reporte_de_local(self):
         datos = self.get("/locales/1?fechaDesde=2026-11-01&fechaHasta=2026-11-19").get_json()
-        self.assertEqual(datos["local"]["nombre"], "Sede 1")
-        self.assertEqual(datos["ventas"]["totalVentas"], 1500000)
-        self.assertEqual(datos["inventario"]["valorTotal"], 9000000)
-        self.assertEqual(datos["balance"]["disponible"]["total"], 190)
+        self.assertEqual(datos["localId"], 1)
+        self.assertEqual(datos["ventas"], {"totalVentas": 1500000, "cantidadVentas": 12})
+        self.assertEqual(datos["inventario"], {"valorTotal": 9000000, "productosAgotados": 1})
+        self.assertEqual(datos["balance"], {"ingresos": 220, "egresos": 30, "disponible": 190})
         self.assertEqual(datos["fuentesNoDisponibles"], [])
         self.assertEqual(self.llamadas_a("/api/balance/reporte")[0][1]["localId"], "1")
 
@@ -365,7 +394,7 @@ class PruebasReportes(unittest.TestCase):
     def test_reporte_de_local_con_configuracion_caida_sale_parcial(self):
         self.falso.fallar.add("configuracion")
         datos = self.get("/locales/1").get_json()
-        self.assertIsNone(datos["local"])
+        self.assertEqual(datos["localId"], 1)
         self.assertEqual(datos["fuentesNoDisponibles"], ["configuracion"])
         self.assertEqual(datos["ventas"]["totalVentas"], 1500000)
 
