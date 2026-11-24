@@ -1,12 +1,11 @@
-import requests
 from flask import Blueprint, current_app, jsonify
 
 from .config import ROL_ADMIN
 from .db import get_db
 from .errores import ApiError
+from .resiliencia import ServicioNoDisponible
 from .routes_admin import crear_usuario
 from .routes_auth import exigir_contrasena_fuerte
-from .serializadores import usuario_json
 from .validar import correo_valido, cuerpo_json, objeto_obligatorio, texto
 
 bp = Blueprint("empresas", __name__, url_prefix="/api/empresas")
@@ -21,13 +20,17 @@ def crear_empresa_en_configuracion(nombre, nit):
     sesion = current_app.extensions["sesion_http"]
     url = f"{cfg['SERVICIOS']['configuracion']}/api/configuracion/empresas"
     try:
-        respuesta = sesion.post(
-            url,
-            json={"nombre": nombre, "nit": nit},
-            headers={"X-Servicio-Origen": "gateway"},
-            timeout=(cfg["TIMEOUT_CONEXION"], cfg["TIMEOUT_LECTURA"]),
+        respuesta = current_app.extensions["resiliencia"].llamar(
+            "configuracion",
+            lambda: sesion.post(
+                url,
+                json={"nombre": nombre, "nit": nit},
+                headers={"X-Servicio-Origen": "gateway"},
+                timeout=(cfg["TIMEOUT_CONEXION"], cfg["TIMEOUT_LECTURA"]),
+            ),
+            idempotente=False,
         )
-    except requests.RequestException:
+    except ServicioNoDisponible:
         raise ApiError(503, "SERVICIO_NO_DISPONIBLE", "El servicio de configuración no responde")
     if respuesta.status_code == 409:
         raise registro_duplicado()
@@ -58,4 +61,4 @@ def registrar_empresa():
         raise registro_duplicado()
     empresa = crear_empresa_en_configuracion(nombre_empresa, nit)
     usuario = crear_usuario(db, int(empresa["empresaId"]), nombre, correo, contrasena, ROL_ADMIN)
-    return jsonify({"empresa": empresa, "administrador": usuario_json(usuario)}), 201
+    return jsonify({"empresaId": usuario["empresa_id"], "usuarioId": usuario["usuario_id"]}), 201
