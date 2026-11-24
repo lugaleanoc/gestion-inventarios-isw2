@@ -64,9 +64,8 @@ def listar():
         condiciones.append("(nombre LIKE %s OR nit LIKE %s)")
         params += [patron, patron]
     activo = booleano_consulta("activo")
-    if activo is not None:
-        condiciones.append("activo = %s")
-        params.append(1 if activo else 0)
+    condiciones.append("activo = %s")
+    params.append(0 if activo is False else 1)
     where = " AND ".join(condiciones)
     db = get_db()
     total = db.fila(f"SELECT COUNT(*) AS total FROM proveedores WHERE {where}", params)["total"]
@@ -81,7 +80,6 @@ def listar():
                 "pagina": pagina,
                 "porPagina": por_pagina,
                 "total": total,
-                "totalPaginas": -(-total // por_pagina),
             },
         }
     )
@@ -180,15 +178,7 @@ def asociar_producto(proveedor_id):
     existente = asociacion(db, proveedor_id, producto_id)
     if existente is not None and existente["activo"]:
         raise ApiError(409, "ASOCIACION_DUPLICADA", "El producto ya está asociado a este proveedor")
-    if principal is None:
-        otro_principal = db.fila(
-            "SELECT pp.producto_id FROM proveedor_producto pp "
-            "JOIN proveedores p ON p.proveedor_id = pp.proveedor_id "
-            "WHERE pp.producto_id = %s AND pp.principal = 1 AND pp.activo = 1 "
-            "AND p.activo = 1 AND p.empresa_id = %s AND pp.proveedor_id <> %s",
-            (producto_id, g.empresa_id, proveedor_id),
-        )
-        principal = otro_principal is None
+    principal = bool(principal)
     try:
         if principal:
             db.ejecutar(
