@@ -163,9 +163,11 @@ services:
       BALANCE_URL: http://balance-service:8000
       TIMEOUT_SEGUNDOS: 3
       MAX_INTENTOS: 3
-      # "true": simula a Inventario (bodega 1 y precio fijo).
-      # "false": llama a inventario-service.
-      USAR_MOCK_INVENTARIO: "true"
+      # "false": llama a inventario-service, que descuenta el stock (RF17)
+      # y dispara la reposicion automatica (RF18).
+      # "true": simula a Inventario (bodega 1 y precio fijo); solo lo usa
+      # docker-compose.pruebas.yml para medir Ventas por separado.
+      USAR_MOCK_INVENTARIO: "false"
       MOCK_PRECIO: 10000
       MOCK_STOCK_DISPONIBLE: 100
     depends_on:

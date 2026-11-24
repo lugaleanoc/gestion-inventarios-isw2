@@ -48,6 +48,10 @@ services:
   ventas:
     ports:
       - "8004:8000"
+    environment:
+      # Las pruebas de rendimiento de Ventas miden Ventas y Balance sin
+      # depender de Inventario (ver perf-tests/jasmin/PLAN_PRUEBAS.md).
+      USAR_MOCK_INVENTARIO: "true"
 
   balance:
     ports:
