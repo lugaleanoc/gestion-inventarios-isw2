@@ -26,13 +26,15 @@ RESULTADOS = os.path.join(CARPETA, "resultados")
 # usuarios: cuantos usuarios simultaneos simula Locust
 # arranque: cuantos usuarios nuevos entran por segundo (rampa)
 # duracion: cuanto dura la medicion
+# Niveles acordados por el equipo el 23/11: los tres integrantes miden con
+# los mismos numeros para que los resultados se puedan comparar entre si.
 ESCENARIOS = {
-    "normal": {"usuarios": 10, "arranque": 2, "duracion": "2m",
-               "descripcion": "Carga normal: un dia corriente en la empresa"},
-    "pico": {"usuarios": 50, "arranque": 10, "duracion": "2m",
-             "descripcion": "Carga pico: hora de mayor movimiento"},
-    "estres": {"usuarios": 150, "arranque": 15, "duracion": "3m",
-               "descripcion": "Estres: mas alla de lo esperado, para ver donde se rompe"},
+    "normal": {"usuarios": 20, "arranque": 5, "duracion": "1m",
+               "descripcion": "Carga normal: un dia comun de la empresa"},
+    "pico": {"usuarios": 100, "arranque": 25, "duracion": "1m",
+             "descripcion": "Carga pico: hora de mas ventas"},
+    "estres": {"usuarios": 300, "arranque": 50, "duracion": "1m",
+               "descripcion": "Estres: buscar donde empieza a fallar"},
 }
 
 # --- Los cinco endpoints ------------------------------------------------
