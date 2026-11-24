@@ -2,6 +2,7 @@ import logging
 import os
 import tempfile
 import threading
+import time
 import unittest
 
 from flask import Flask, jsonify, request
@@ -82,6 +83,8 @@ class Base(unittest.TestCase):
                 "EXPONER_CODIGO_RECUPERACION": True,
                 "TIMEOUT_CONEXION": 1,
                 "TIMEOUT_LECTURA": 3,
+                "REINTENTO_ESPERA": 0,
+                "CIRCUITO_SEGUNDOS": 0.3,
             }
         )
         self.cli = self.app.test_client()
@@ -130,9 +133,9 @@ class PruebasRegistroYLogin(Base):
         r = self.registrar()
         self.assertEqual(r.status_code, 201)
         datos = r.get_json()
-        self.assertEqual(datos["empresa"]["empresaId"], 101)
-        self.assertEqual(datos["administrador"]["rol"], "administrador")
-        self.assertEqual(datos["administrador"]["empresaId"], 101)
+        self.assertEqual(set(datos), {"empresaId", "usuarioId"})
+        self.assertEqual(datos["empresaId"], 101)
+        self.assertEqual(self.login().get_json()["usuario"]["rol"], "administrador")
         self.assertNotIn("contrasena", str(datos))
         self.assertEqual(self.falso.llamadas_empresa[-1]["X-Servicio-Origen"], "gateway")
 
@@ -179,7 +182,7 @@ class PruebasRegistroYLogin(Base):
         datos = r.get_json()
         self.assertEqual(set(datos), {"token", "expiraEn", "usuario"})
         self.assertEqual(datos["usuario"]["correo"], "admin@empresa.co")
-        self.assertTrue(datos["expiraEn"].endswith("Z"))
+        self.assertEqual(datos["expiraEn"], 480 * 60)
 
     def test_login_incorrecto_da_401(self):
         self.registrar()
@@ -286,11 +289,15 @@ class PruebasUsuarios(Base):
         for i in range(4):
             self.crear_usuario(cab, correo=f"u{i}@empresa.co", rol="vendedor" if i < 3 else "encargado_bodega")
         r = self.cli.get("/api/usuarios?rol=vendedor&pagina=2&porPagina=2", headers=cab).get_json()
-        self.assertEqual(r["paginacion"], {"pagina": 2, "porPagina": 2, "total": 3, "totalPaginas": 2})
+        self.assertEqual(r["paginacion"], {"pagina": 2, "porPagina": 2, "total": 3})
         self.assertEqual(len(r["datos"]), 1)
         self.assertEqual(self.cli.get("/api/usuarios?rol=raro", headers=cab).status_code, 400)
         todos = self.cli.get("/api/usuarios?activo=true", headers=cab).get_json()
         self.assertEqual(todos["paginacion"]["total"], 5)
+        uid = self.cli.get("/api/usuarios?rol=encargado_bodega", headers=cab).get_json()["datos"][0]["usuarioId"]
+        self.cli.delete(f"/api/usuarios/{uid}", headers=cab)
+        self.assertEqual(self.cli.get("/api/usuarios", headers=cab).get_json()["paginacion"]["total"], 4)
+        self.assertEqual(self.cli.get("/api/usuarios?activo=false", headers=cab).get_json()["paginacion"]["total"], 1)
 
     def test_solo_administrador_gestiona_usuarios(self):
         cab = self.admin_headers()
@@ -420,6 +427,40 @@ class PruebasProxy(Base):
         r = self.cli.get("/api/ventas", headers=cab)
         self.assertEqual((r.status_code, r.get_json()["error"]), (503, "SERVICIO_NO_DISPONIBLE"))
         self.assertEqual(self.cli.get("/api/inventario/productos", headers=cab).status_code, 200)
+
+    def test_reintenta_y_abre_el_circuito(self):
+        cab = self.admin_headers()
+        self.app.config["SERVICIOS"]["ventas"] = "http://127.0.0.1:9"
+        intentos = []
+        original = self.app.extensions["sesion_http"].request
+
+        def contando(*args, **kwargs):
+            intentos.append(1)
+            return original(*args, **kwargs)
+
+        self.app.extensions["sesion_http"].request = contando
+        self.assertEqual(self.cli.get("/api/ventas", headers=cab).status_code, 503)
+        self.assertEqual(len(intentos), 3)
+        self.assertEqual(self.cli.get("/api/ventas", headers=cab).status_code, 503)
+        self.assertEqual(len(intentos), 3)
+        self.assertEqual(self.cli.get("/api/inventario/productos", headers=cab).status_code, 200)
+        self.app.config["SERVICIOS"]["ventas"] = self.url_falso
+        time.sleep(0.4)
+        self.assertEqual(self.cli.get("/api/ventas", headers=cab).status_code, 200)
+
+    def test_post_caido_se_reintenta_solo_si_no_llego_a_enviarse(self):
+        cab = self.admin_headers()
+        self.app.config["SERVICIOS"]["ventas"] = "http://127.0.0.1:9"
+        self.assertEqual(self.cli.post("/api/ventas/x", json={}, headers=cab).status_code, 503)
+
+    def test_el_token_trae_empresa_usuario_y_rol(self):
+        from app.jwt_utils import verificar
+
+        ses = self.sesion()
+        claims = verificar(ses["token"], "secreto-de-pruebas")
+        self.assertEqual(claims["empresaId"], 101)
+        self.assertEqual(claims["usuarioId"], ses["usuario"]["usuarioId"])
+        self.assertEqual((claims["rol"], claims["tipo"]), ("administrador", "usuario"))
 
     def test_el_proxy_exige_token(self):
         self.assertEqual(self.cli.get("/api/proveedores").status_code, 401)

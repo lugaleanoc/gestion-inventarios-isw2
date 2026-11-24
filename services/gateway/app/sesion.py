@@ -8,7 +8,6 @@ from .config import ROL_TIENDA
 from .db import get_db
 from .errores import ApiError
 from .jwt_utils import TokenError, firmar, verificar
-from .tiempo import desde_epoch, iso
 
 
 def emitir_token(tipo, sujeto_id, empresa_id, rol):
@@ -17,15 +16,15 @@ def emitir_token(tipo, sujeto_id, empresa_id, rol):
     emitido = int(time.time())
     exp = emitido + minutos * 60
     claims = {
-        "sub": sujeto_id,
-        "emp": empresa_id,
+        "usuarioId": sujeto_id,
+        "empresaId": empresa_id,
         "rol": rol,
-        "tip": tipo,
+        "tipo": tipo,
         "jti": uuid.uuid4().hex,
         "iat": emitido,
         "exp": exp,
     }
-    return firmar(claims, cfg["JWT_SECRET"]), iso(desde_epoch(exp))
+    return firmar(claims, cfg["JWT_SECRET"]), minutos * 60
 
 
 def autenticar():
@@ -39,17 +38,17 @@ def autenticar():
     db = get_db()
     if db.fila("SELECT jti FROM tokens_revocados WHERE jti = %s", (claims["jti"],)):
         raise ApiError(401, "TOKEN_INVALIDO", "La sesión fue cerrada")
-    if claims["tip"] == "tienda":
-        fila = db.fila("SELECT empresa_id, activo FROM tiendas_web WHERE tienda_id = %s", (claims["sub"],))
+    if claims["tipo"] == "tienda":
+        fila = db.fila("SELECT empresa_id, activo FROM tiendas_web WHERE tienda_id = %s", (claims["usuarioId"],))
         rol = ROL_TIENDA
     else:
-        fila = db.fila("SELECT empresa_id, rol, activo FROM usuarios WHERE usuario_id = %s", (claims["sub"],))
+        fila = db.fila("SELECT empresa_id, rol, activo FROM usuarios WHERE usuario_id = %s", (claims["usuarioId"],))
         rol = fila["rol"] if fila else None
     if fila is None or not fila["activo"]:
         raise ApiError(401, "TOKEN_INVALIDO", "La cuenta asociada al token está inactiva")
     g.claims = claims
-    g.tipo = claims["tip"]
-    g.sujeto_id = claims["sub"]
+    g.tipo = claims["tipo"]
+    g.sujeto_id = claims["usuarioId"]
     g.empresa_id = fila["empresa_id"]
     g.rol = rol
     return claims

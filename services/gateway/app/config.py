@@ -54,4 +54,8 @@ def ajustes():
         "SERVICIOS": servicios,
         "TIMEOUT_CONEXION": float(os.getenv("TIMEOUT_CONEXION", "3")),
         "TIMEOUT_LECTURA": float(os.getenv("TIMEOUT_LECTURA", "15")),
+        "REINTENTOS": int(os.getenv("REINTENTOS", "3")),
+        "REINTENTO_ESPERA": float(os.getenv("REINTENTO_ESPERA", "0.2")),
+        "CIRCUITO_FALLAS": int(os.getenv("CIRCUITO_FALLAS", "3")),
+        "CIRCUITO_SEGUNDOS": float(os.getenv("CIRCUITO_SEGUNDOS", "5")),
     }
