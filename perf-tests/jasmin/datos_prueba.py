@@ -90,6 +90,24 @@ def crear_local(admin):
     return r.json()["localId"]
 
 
+def crear_o_buscar(admin, recurso, cuerpo, campo_id):
+    """Crea una categoria o bodega; si ya existia (409), busca su id por nombre.
+
+    No se puede suponer el id 1: la base puede tener datos de otras empresas,
+    y Inventario solo deja usar los registros de la propia empresa.
+    """
+    url = INVENTARIO + "/api/inventario/" + recurso
+    r = enviar("POST", url, admin, cuerpo, aceptados=(201, 409))
+    if r.status_code == 201:
+        return r.json()[campo_id]
+    existentes = enviar("GET", url, admin).json()
+    for registro in existentes:
+        if registro.get("nombre") == cuerpo["nombre"]:
+            return registro[campo_id]
+    sys.exit("ERROR: Inventario dice que '{}' ya existe en {}, pero no aparece en el listado".format(
+        cuerpo["nombre"], recurso))
+
+
 def cargar_inventario(admin, local_id):
     """Paso 4 (opcional). Crea productos y existencias en Inventario.
 
@@ -99,12 +117,9 @@ def cargar_inventario(admin, local_id):
         print("Inventario no esta corriendo en {}: se omite (Ventas usa el modo simulado)".format(INVENTARIO))
         return PRODUCTOS
 
-    r = enviar("POST", INVENTARIO + "/api/inventario/categorias", admin, {"nombre": "Papeleria"},
-               aceptados=(201, 409))
-    categoria_id = r.json().get("categoriaId", 1)
-    r = enviar("POST", INVENTARIO + "/api/inventario/bodegas", admin,
-               {"nombre": "Bodega Principal", "localId": local_id}, aceptados=(201, 409))
-    bodega_id = r.json().get("bodegaId", 1)
+    categoria_id = crear_o_buscar(admin, "categorias", {"nombre": "Papeleria"}, "categoriaId")
+    bodega_id = crear_o_buscar(admin, "bodegas", {"nombre": "Bodega Principal", "localId": local_id},
+                               "bodegaId")
 
     creados = []
     for i in PRODUCTOS:

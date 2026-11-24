@@ -32,8 +32,9 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"
 
-# Comando con el que arranca el contenedor.
+# Comando con el que arranca el contenedor. Primero init_db.py crea las
+# tablas en un solo proceso; si termina bien (&&), arranca gunicorn.
 #   -w 2            dos procesos atendiendo peticiones
 #   -b 0.0.0.0:8000 escucha en todas las interfaces, no solo dentro del contenedor
 #   wsgi:app        el archivo wsgi.py y su variable app
-CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:8000", "--access-logfile", "-", "wsgi:app"]
+CMD ["sh", "-c", "python init_db.py && exec gunicorn -w 2 -b 0.0.0.0:8000 --access-logfile - wsgi:app"]
