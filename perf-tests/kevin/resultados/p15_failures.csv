@@ -1,0 +1,2 @@
+Method,Name,Error,Occurrences,First Seen,Last Seen
+GET,GET /api/reportes/ventas-por-canal?refrescar=true,CatchResponseError('0: '),30,2026-11-24T02:20:12Z,2026-11-24T02:20:15Z
