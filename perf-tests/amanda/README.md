@@ -37,9 +37,13 @@ prueba de estrés en la que nada falla no enseña nada.
 
 | Escenario | Usuarios | Rampa | Duración | Qué representa |
 |---|---:|---:|---|---|
-| Carga normal | 10 | 2/s | 2 min | Un día corriente en la empresa |
-| Carga pico | 50 | 10/s | 2 min | Hora de mayor movimiento |
-| Estrés | 150 | 15/s | 3 min | Más allá de lo esperado, para encontrar el límite |
+| Carga normal | 20 | 5/s | 1 min | Un día común de la empresa |
+| Carga pico | 100 | 25/s | 1 min | Hora de más ventas |
+| Estrés | 300 | 50/s | 1 min | Buscar dónde empieza a fallar |
+
+Estos niveles los acordó el equipo el 23 de noviembre, para que los tres
+integrantes midan con los mismos números y los resultados se puedan
+comparar entre sí.
 
 Cada usuario simulado espera entre 0,5 y 1,5 segundos entre una petición y
 la siguiente, como haría una persona que lee la pantalla antes de volver a
@@ -135,7 +139,7 @@ guarda sus ids en `datos_sembrados.json`.
 python ejecutar.py
 ```
 
-Son unos 45 minutos y no hay que hacer nada mientras tanto. Opciones
+Son unos 20 minutos y no hay que hacer nada mientras tanto. Opciones
 útiles si algo sale mal o quieres ir por partes:
 
 ```bash

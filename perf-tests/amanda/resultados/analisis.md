@@ -1,198 +1,164 @@
 # Análisis de los resultados
 
-Dos corridas completas de las 15 pruebas, el 23 de noviembre de 2026, sobre
-Inventario y Reposición con 500 productos sembrados y la base vacía al
+Tres corridas completas de las 15 pruebas, el 23 de noviembre de 2026,
+sobre Inventario y Reposición con 500 productos sembrados y la base vacía al
 empezar cada una.
 
-- **Antes:** un proceso por contenedor (`gunicorn -w 1`) → `resultados-1-proceso/`
-- **Después:** dos procesos por contenedor (`gunicorn -w 2`) → `resultados/`
+| Carpeta | Carga | Procesos | Para qué |
+|---|---|---|---|
+| `resultados-1-proceso/` | 10 / 50 / 150 | 1 | Experimento de optimización: antes |
+| `resultados-2-procesos/` | 10 / 50 / 150 | 2 | Experimento de optimización: después |
+| **`resultados/`** | **20 / 100 / 300** | **2** | **Medición oficial, con los niveles acordados por el equipo** |
 
 ---
 
 ## 1. Veredicto frente a los criterios
 
-**Las 15 pruebas cumplen, en las dos configuraciones.** Cero errores en las
-tres cargas, incluida la de estrés. Entre las dos corridas se hicieron unas
-230.000 peticiones y ninguna falló.
+**Las 15 pruebas cumplen.** Cero errores en las tres cargas, incluida la de
+estrés con 300 usuarios: unas 110.000 peticiones y ninguna falló.
 
 El RNF06 exige responder las consultas en menos de 2 segundos. El peor p95
-de todas las pruebas fue **220 ms**, en el descuento de stock bajo estrés.
-Son **9 veces mejor** que el límite exigido.
+de toda la corrida fue **490 ms**, en el descuento de stock bajo estrés.
+Sigue estando **4 veces por debajo** del límite exigido.
 
-| Escenario | Peor p95 (1 proceso) | Peor p95 (2 procesos) | Errores |
+| Escenario | Peor p95 | Peor máximo | Errores |
 |---|---:|---:|---:|
-| Carga normal (10 usuarios) | 23 ms | 22 ms | 0 % |
-| Carga pico (50 usuarios) | 20 ms | 23 ms | 0 % |
-| Estrés (150 usuarios) | 150 ms | 220 ms | 0 % |
+| Carga normal (20 usuarios) | 21 ms | 96 ms | 0 % |
+| Carga pico (100 usuarios) | 18 ms | 122 ms | 0 % |
+| Estrés (300 usuarios) | 490 ms | 576 ms | 0 % |
 
 ---
 
-## 2. El experimento: por qué se cambió el número de procesos
+## 2. Hallazgo principal: se encontró el límite del sistema
 
-La primera corrida mostró que las lecturas no se degradaban con la carga y
-las escrituras sí. La explicación más probable era que **el contenedor
-atendía una petición a la vez**: Gunicorn corría con un solo proceso
-trabajador, así que las peticiones hacían fila antes de entrar.
+Con 150 usuarios el servicio nunca llegó a saturarse. Con 300 sí, y solo en
+un endpoint. La prueba está en cómo responde el throughput al duplicar los
+usuarios:
 
-Los números apoyaban esa idea:
+| Endpoint | Tipo | 150 usuarios | 300 usuarios | Subida |
+|---|---|---:|---:|---:|
+| E1 consulta de stock | lectura | 146,0/s | 287,5/s | **+97 %** |
+| E2 búsqueda | lectura | 145,6/s | 285,4/s | **+96 %** |
+| E4 resumen | lectura | 146,4/s | 288,1/s | **+97 %** |
+| E5 solicitud automática | escritura | 143,9/s | 280,8/s | **+95 %** |
+| **E3 descuento de stock** | **escritura** | **137,6/s** | **214,7/s** | **+56 %** |
 
-| | Trabajo por petición | Peticiones/s | Ocupación del proceso |
-|---|---:|---:|---:|
-| E1 lectura | ~4 ms | 146,1/s | 58 % |
-| E3 escritura | ~7 ms | 134,1/s | 94 % |
+Cuatro endpoints doblaron su throughput al doblar los usuarios: siguen
+teniendo capacidad de sobra. **El descuento de stock no pudo: se quedó en
++56 %.** Ese es el límite del sistema, y está en unas **215 peticiones por
+segundo** para esa operación.
 
-Una escritura cuesta casi el doble que una lectura, porque además de
-consultar actualiza el saldo e inserta la fila del kardex. Y una fila de
-espera no crece proporcional: se dispara cerca del 100 %.
+### Cómo se ve la saturación en los tiempos
 
-**Había un motivo para tener un solo proceso, y había que arreglarlo
-primero.** Las tablas se creaban al arrancar la aplicación, y Gunicorn
-ejecuta ese código una vez por proceso: con dos, los dos intentaban crear
-las mismas tablas al tiempo y MySQL respondía
+| E3 descuento de stock | 150 usuarios | 300 usuarios |
+|---|---:|---:|
+| p50 | 16 ms | 410 ms |
+| p95 | 220 ms | 490 ms |
+| p99 | 1.500 ms | 530 ms |
+| Máximo | 3.366 ms | 576 ms |
+
+Fíjate en la forma, que es lo interesante: con 150 usuarios los tiempos
+estaban muy separados (16 ms la petición típica, 1.500 ms la peor); con 300
+están todos juntos entre 410 y 576 ms.
+
+**Eso es exactamente cómo se ve una fila saturada.** Cuando un servicio
+todavía tiene capacidad, la mayoría pasa rápido y solo unas pocas esperan.
+Cuando se satura, todas hacen la misma fila y todas esperan casi lo mismo.
+Es la diferencia entre llegar a un banco con dos personas delante y llegar
+cuando ya hay fila: ahí todos esperan igual.
+
+### Por qué se satura justo ese endpoint
+
+`POST /stock/descuentos` es el único que **bloquea la fila del stock** con
+`SELECT ... FOR UPDATE`, para que dos ventas simultáneas no dejen el
+inventario en negativo. Mientras una petición tiene la fila tomada, las
+demás que quieren ese producto esperan turno. Con 300 usuarios pidiendo
+sobre 500 productos, la coincidencia deja de ser rara y se vuelve constante.
+
+**Ese bloqueo no es un defecto, es la protección funcionando.** El precio de
+que el stock nunca quede negativo es que las escrituras hagan fila. La
+prueba le pone número a ese precio: el sistema aguanta unas 215 ventas por
+segundo antes de que la fila se note.
+
+### El sistema se degrada bien
+
+Vale la pena señalarlo: al saturarse, el servicio **no falló, solo se puso
+más lento**, y de forma pareja. Cero errores, cero peticiones perdidas, y
+aun así cuatro veces por debajo del límite de 2 segundos. Un sistema que al
+saturarse empieza a devolver errores es mucho peor que uno que se pone
+lento de forma predecible.
+
+---
+
+## 3. La optimización que se propuso, se midió y se validó
+
+Antes de la medición oficial se hizo un experimento, que explica por qué los
+contenedores corren como corren hoy.
+
+**El problema.** La primera corrida se hizo con un solo proceso por
+contenedor (`gunicorn -w 1`), porque con dos fallaba el arranque: las tablas
+se creaban al iniciar la aplicación, y Gunicorn ejecuta ese código una vez
+por proceso, así que los dos intentaban crearlas al tiempo y MySQL respondía
 `(1050, "Table 'categorias' already exists")`.
 
-Se corrigió separando los dos trabajos: `init_db.py` crea las tablas una
-sola vez, antes de arrancar Gunicorn, y la aplicación ya no las crea
-(`CREAR_TABLAS=false`). Con eso el número de procesos dejó de estar atado a
-la base de datos.
+**La corrección.** Se separaron los dos trabajos: `init_db.py` crea las
+tablas una sola vez antes de arrancar Gunicorn, y la aplicación ya no las
+crea. Con eso el número de procesos dejó de depender de la base de datos y
+se pudo volver a dos.
 
-**Hipótesis, escrita antes de medir:** el p95 de E3 bajo estrés debería
-bajar de 150 ms a entre 30 y 60 ms.
+**El resultado**, midiendo las mismas 15 pruebas antes y después:
 
----
-
-## 3. Resultado: mejoró en casi todo, menos donde se esperaba
-
-De las 15 pruebas, **el p95 mejoró en 12, se mantuvo en 1 y empeoró en 2**.
-Las dos que empeoraron son las dos de E3 con más carga.
-
-| Prueba | p95 antes | p95 después | |
+| | 1 proceso | 2 procesos | |
 |---|---:|---:|---|
-| E1 estrés | 12 ms | 11 ms | mejor |
-| E2 estrés | 16 ms | 13 ms | mejor |
-| E4 estrés | 10 ms | 10 ms | igual |
-| **E5 estrés** | **37 ms** | **15 ms** | **mejor, menos de la mitad** |
-| **E3 pico** | **20 ms** | **23 ms** | **peor** |
-| **E3 estrés** | **150 ms** | **220 ms** | **peor** |
+| p95, en cuántas pruebas mejoró | — | **12 de 15** | |
+| E3, petición típica (p50) bajo estrés | 65 ms | **16 ms** | 4 veces mejor |
+| E5, p95 bajo estrés | 37 ms | **15 ms** | menos de la mitad |
+| E3, p95 bajo estrés | 150 ms | 220 ms | peor |
 
-Pero mirar solo el p95 de E3 engaña. Mirando la distribución completa:
+**La predicción falló, y eso también se explica.** Se había predicho que el
+p95 de E3 bajaría a 30-60 ms. Bajó la petición típica, pero el p95 subió. La
+razón: con un proceso las peticiones hacían fila *antes* de entrar a la
+aplicación y llegaban a la base de una en una, así que nunca competían por
+el bloqueo. Con dos, llegan a la vez y ahí aparece la competencia que antes
+estaba tapada. **El cuello de botella se movió de la aplicación a la base de
+datos**, y es el mismo cuello que la corrida oficial con 300 usuarios acabó
+de confirmar.
 
-| E3 bajo estrés | 1 proceso | 2 procesos | |
-|---|---:|---:|---|
-| p50, la petición típica | 65 ms | **16 ms** | **4 veces mejor** |
-| p95 | 150 ms | 220 ms | peor |
-| p99 | 450 ms | 1.500 ms | peor |
-| p99,9 | 3.500 ms | 3.200 ms | igual |
-| Throughput | 134,1/s | 137,6/s | algo mejor |
-
-**La petición normal pasó de 65 ms a 16 ms, pero las peores empeoraron.**
-
----
-
-## 4. Hallazgo principal: el cuello de botella se movió
-
-Esto es lo más valioso de todo el ejercicio, y no es lo que esperábamos.
-
-**Con un proceso,** las peticiones hacían fila *antes* de entrar a la
-aplicación. Llegaban a la base de datos de una en una, así que nunca se
-peleaban entre ellas: el cuello estaba en la aplicación.
-
-**Con dos procesos,** las peticiones entran de a dos y llegan a la base al
-mismo tiempo. Ahí aparece algo que antes estaba tapado: `POST
-/stock/descuentos` bloquea la fila del stock con `SELECT ... FOR UPDATE`
-para que dos ventas simultáneas no dejen el inventario en negativo. Cuando
-los dos procesos piden el mismo producto, uno espera a que el otro suelte
-la fila.
-
-**El cuello de botella pasó de la aplicación a la base de datos.** Por eso
-la petición típica mejoró cuatro veces (ya no hace fila para entrar) y las
-peores empeoraron (ahora sí compiten por la misma fila).
-
-La prueba de que es el bloqueo y no otra cosa: **E3 es el único endpoint que
-bloquea filas, y es el único que empeoró.** E5, que también escribe pero no
-bloquea nada, mejoró a menos de la mitad (37 ms → 15 ms).
-
-### La predicción falló, y eso también se explica
-
-Habíamos predicho que el p95 de E3 bajaría a 30-60 ms. **No pasó: subió a
-220 ms.** La predicción acertó en la causa que había medido —el proceso
-único— pero no contaba con que al quitarla aparecería otra que estaba
-escondida detrás.
-
-Es lo normal al optimizar: quitar un cuello de botella no hace el sistema
-infinitamente más rápido, solo deja ver el siguiente.
-
-### Los picos de 3,4 segundos no cambiaron, y eso dice de dónde vienen
-
-En las dos corridas, E3 y E5 tienen peticiones sueltas de unos 3,4
-segundos, y el número **casi no se movió** al duplicar los procesos
-(3.527 → 3.366 ms en E3; 3.478 → 2.329 ms en E5).
-
-Si fueran por falta de procesos, habrían bajado. Como no bajaron, la causa
-es otra, y encaja con una sola cosa: **E3 y E5 son los dos únicos endpoints
-que llaman a Configuración y a Proveedores, que no están levantados**. El
-timeout de esas llamadas es de 3 segundos. Cada 30 segundos el circuit
-breaker deja pasar una petición para comprobar si el servicio revivió, y esa
-petición paga el timeout completo.
-
-O sea: **esos picos desaparecen solos cuando los ocho servicios estén
-arriba**, y no son un problema de nuestros servicios. Los tres endpoints que
-no llaman a nadie (E1, E2, E4) nunca pasaron de 138 ms en ninguna corrida.
+La prueba de que es el bloqueo y no otra cosa: E3 es el único endpoint que
+bloquea filas, y es el único que empeoró y el único que se satura. E5, que
+también escribe pero no bloquea nada, mejoró y escala sin problema.
 
 ---
 
-## 5. Decisión: se queda con dos procesos
+## 4. Otras observaciones
 
-Aunque el p95 de E3 empeoró, la configuración de dos procesos es mejor:
+**Las lecturas no se inmutaron.** Con 300 usuarios, la consulta de stock
+respondió en 11 ms de p95 y el resumen de reposición en 7 ms. Su límite está
+por encima de lo que 300 usuarios simulados pueden pedirles.
 
-- **El p95 mejoró en 12 de las 15 pruebas.**
-- **La petición típica de E3 es 4 veces más rápida** (65 → 16 ms).
-- **E5 bajo estrés mejoró a menos de la mitad** (37 → 15 ms).
-- El throughput subió un poco en las dos escrituras.
-- Con un solo proceso, el servicio **no puede atender dos peticiones a la
-  vez**, lo cual es una mala propiedad en sí misma, al margen de los números.
+**Los picos de 3,4 segundos desaparecieron.** En las corridas anteriores
+aparecían peticiones sueltas de unos 3,4 s en E3 y E5, siempre el mismo
+valor, causadas por el timeout de 3 segundos hacia Configuración y
+Proveedores, que no estaban levantados: cada 30 segundos el circuit breaker
+deja pasar una petición para comprobar si el servicio revivió. En esta
+corrida no aparecen, porque las pruebas duran 1 minuto en vez de 3 y el
+circuito pasa abierto casi todo el tiempo. El máximo de E3 fue 576 ms.
 
-Lo que empeoró afecta al 5 % peor de un solo endpoint, bajo una carga que
-está por encima de la esperada, y sigue nueve veces por debajo del límite
-del RNF06.
-
-**Y la optimización que sigue ya no es poner más procesos.** Para la cola de
-E3 habría que atacar el bloqueo: que la fila del stock esté retenida el
-menor tiempo posible. Poner cuatro procesos probablemente empeoraría el p95
-todavía más, porque habría cuatro peleando por la misma fila en vez de dos.
-
----
-
-## 6. Lo que estas pruebas NO demostraron
-
-Hay que decirlo, porque un resultado donde todo pasa suele significar que no
-se apretó lo suficiente.
-
-**No se encontró el límite del sistema.** El throughput medido fue el que la
-propia prueba permitía, no el que el servicio aguanta. Cada usuario virtual
-espera entre 0,5 y 1,5 segundos entre peticiones, así que 150 usuarios no
-pueden generar más de unas 148 peticiones por segundo por rápido que sea el
-servidor. El servicio entregó el 98-100 % de ese tope en las dos corridas.
-
-Si el throughput se hubiera quedado estancado por debajo del tope, ahí sí
-habría saturación. No la hubo en ninguna de las dos configuraciones.
-
-**Segunda observación honesta:** esperábamos que la búsqueda de E2 saliera
-claramente más lenta, porque `LIKE '%texto%'` obliga a recorrer la tabla
-entera. Salió apenas 2 ms por encima de E1. La razón es que **500 productos
-son muy pocos**: recorrer 500 filas no le cuesta nada a MySQL. El problema
-aparecería con 100.000 productos.
+**La búsqueda sigue sin dolerle.** Esperábamos que E2 saliera claramente más
+lenta, porque `LIKE '%texto%'` obliga a recorrer la tabla entera. Con 300
+usuarios llegó a 22 ms de p95. La razón es que **500 productos son muy
+pocos**: recorrer 500 filas no le cuesta nada a MySQL. El problema aparecería
+con 100.000 productos.
 
 ---
 
-## 7. Qué queda para la Entrega 4
+## 5. Qué queda para la Entrega 4
 
-- **Encontrar el límite de verdad**, quitando la pausa entre peticiones o
-  subiendo mucho los usuarios, hasta que aparezcan errores.
-- **Atacar la cola de E3**, que es el único cuello real que quedó, reduciendo
-  el tiempo que la fila de stock está bloqueada.
+- **Atacar la cola de E3**, que es el único cuello real: reducir el tiempo
+  que la fila de stock está bloqueada. Poner más procesos ya no sirve, al
+  contrario: habría más peticiones compitiendo por la misma fila.
 - **Repetir E2 con 100.000 productos**, que es donde el `LIKE` debería doler,
   y ahí sí validar el índice FULLTEXT.
-- **Medir con los ocho servicios arriba**, para confirmar que los picos de
-  3,4 segundos desaparecen.
+- **Medir con los ocho servicios arriba**, para confirmar que los picos del
+  timeout no reaparecen.
 - **Medir a través del API Gateway**, para saber cuánto agrega él.
