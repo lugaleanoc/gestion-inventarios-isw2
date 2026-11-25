@@ -49,7 +49,7 @@ def verificar(token, secreto, ahora=None):
     exp = claims.get("exp")
     if not isinstance(exp, int) or exp <= (ahora if ahora is not None else int(time.time())):
         raise TokenError("TOKEN_EXPIRADO", "El token expiró")
-    for campo in ("sub", "emp", "rol", "tip", "jti"):
+    for campo in ("usuarioId", "empresaId", "rol", "tipo", "jti"):
         if campo not in claims:
             raise TokenError("TOKEN_INVALIDO", "El token no tiene los datos necesarios")
     return claims

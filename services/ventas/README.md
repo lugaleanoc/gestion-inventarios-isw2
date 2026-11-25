@@ -39,19 +39,21 @@ Swagger: `http://localhost:8004/docs/` con el compose de pruebas.
 - Una venta `pendiente` se puede reenviar a Balance con
   `POST /api/ventas/{id}/reintento-balance`.
 
-## Inventario simulado (mock)
+## Inventario real y simulado (mock)
 
-Mientras el servicio de Inventario no esté listo, con
-`USAR_MOCK_INVENTARIO=true` (así está en `docker-compose.yml`) Ventas no lo llama:
+En `docker-compose.yml` Ventas llama al Inventario real
+(`USAR_MOCK_INVENTARIO: "false"`): cada venta descuenta el stock en
+`inventario-service` (RF17) y, si el producto queda en el mínimo, Inventario
+dispara la solicitud de reposición automática (RF18).
+
+El modo simulado (`USAR_MOCK_INVENTARIO=true`) queda solo para las pruebas de
+rendimiento: `docker-compose.pruebas.yml` lo activa para medir Ventas y Balance
+sin depender de Inventario. En ese modo Ventas no llama a Inventario:
 
 - todas las bodegas son la **1**;
 - el precio de todo producto es `MOCK_PRECIO` (10.000);
 - si se piden más de `MOCK_STOCK_DISPONIBLE` (100) unidades responde
   `409 STOCK_INSUFICIENTE`, para poder probar el rechazo.
-
-El Inventario de Amanda ya está en `docker-compose.yml` (`inventario-service`,
-en la red `default`, que Ventas también usa). Para que Ventas lo llame de
-verdad, poner `USAR_MOCK_INVENTARIO: "false"` en el bloque de Ventas.
 
 ## Cómo correrlo y probarlo
 

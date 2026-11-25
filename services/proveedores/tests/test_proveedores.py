@@ -149,7 +149,8 @@ class PruebasProveedores(unittest.TestCase):
         self.cli.delete(f"{BASE}/{pid}", headers=ADM)
         r = self.cli.get(BASE + "/?pagina=2&porPagina=2", headers=ADM).get_json()
         self.assertEqual(len(r["datos"]), 2)
-        self.assertEqual(r["paginacion"], {"pagina": 2, "porPagina": 2, "total": 5, "totalPaginas": 3})
+        self.assertEqual(self.cli.get(BASE + "/", headers=ADM).get_json()["paginacion"]["total"], 4)
+        self.assertEqual(r["paginacion"], {"pagina": 2, "porPagina": 2, "total": 4})
         activos = self.cli.get(BASE + "/?activo=true", headers=ADM).get_json()["paginacion"]["total"]
         inactivos = self.cli.get(BASE + "/?activo=false", headers=ADM).get_json()["paginacion"]["total"]
         self.assertEqual((activos, inactivos), (4, 1))
@@ -171,7 +172,7 @@ class PruebasProveedores(unittest.TestCase):
         self.assertEqual(r.status_code, 201)
         datos = r.get_json()
         self.assertEqual(datos["productoId"], 7)
-        self.assertTrue(datos["principal"])
+        self.assertFalse(datos["principal"])
         self.assertEqual(datos["precioCompra"], 4500.5)
         self.assertEqual(
             self.cli.post(f"{BASE}/{pid}/productos", json={"productoId": 7}, headers=ADM).status_code, 409
@@ -185,7 +186,9 @@ class PruebasProveedores(unittest.TestCase):
     def test_solo_un_proveedor_principal_por_producto(self):
         a = self.crear(proveedor(nit="A")).get_json()["proveedorId"]
         b = self.crear(proveedor(nombre="B", nit="B")).get_json()["proveedorId"]
-        self.assertTrue(self.cli.post(f"{BASE}/{a}/productos", json={"productoId": 1}, headers=ADM).get_json()["principal"])
+        self.assertTrue(
+            self.cli.post(f"{BASE}/{a}/productos", json={"productoId": 1, "principal": True}, headers=ADM).get_json()["principal"]
+        )
         self.assertFalse(self.cli.post(f"{BASE}/{b}/productos", json={"productoId": 1}, headers=ADM).get_json()["principal"])
         c = self.crear(proveedor(nombre="C", nit="C")).get_json()["proveedorId"]
         self.assertTrue(
@@ -194,6 +197,9 @@ class PruebasProveedores(unittest.TestCase):
         quien = self.cli.get(f"{BASE}/por-producto/1", headers=ADM).get_json()
         self.assertEqual([p["principal"] for p in quien], [True, False, False])
         self.assertEqual(quien[0]["proveedorId"], c)
+        self.assertFalse(
+            self.cli.get(f"{BASE}/{a}/productos", headers=ADM).get_json()[0]["principal"]
+        )
 
     def test_listar_y_quitar_asociaciones(self):
         pid = self.crear().get_json()["proveedorId"]
@@ -228,7 +234,7 @@ class PruebasProveedores(unittest.TestCase):
 
     def test_por_producto_incluye_datos_del_proveedor_y_de_la_asociacion(self):
         pid = self.crear().get_json()["proveedorId"]
-        self.cli.post(f"{BASE}/{pid}/productos", json={"productoId": 9, "precioCompra": 1200}, headers=ADM)
+        self.cli.post(f"{BASE}/{pid}/productos", json={"productoId": 9, "precioCompra": 1200, "principal": True}, headers=ADM)
         datos = self.cli.get(f"{BASE}/por-producto/9", headers=ADM).get_json()
         self.assertEqual(len(datos), 1)
         self.assertEqual(datos[0]["nombre"], "Distribuidora Andina")

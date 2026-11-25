@@ -48,9 +48,6 @@ def dashboard():
         metricas, preferencias = informes.configuracion_dashboard(f)
         p = periodo_del_dashboard(local_id, desde, hasta, preferencias)
         return {
-            "localId": p.local_id,
-            "fechaDesde": p.desde.isoformat(),
-            "fechaHasta": p.hasta.isoformat(),
             "metricas": {nombre: informes.metrica(nombre, f, p) for nombre in metricas},
         }
 

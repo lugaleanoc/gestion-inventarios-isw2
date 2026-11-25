@@ -131,6 +131,19 @@ def main():
     r = cliente.get("/api/balance/movimientos?tipo=egreso", headers=VENDEDOR)
     comprobar("Listado paginado filtrado por tipo", r.get_json()["paginacion"]["total"] == 1, r)
 
+    # --- Balance consolidado (sin localId): lo usa el dashboard general de Reportes ---
+    otro_local = {"localId": 2, "tipo": "ingreso", "medioPago": "tarjeta", "monto": 20000,
+                  "concepto": "Venta en sede norte"}
+    cliente.post("/api/balance/movimientos", json=otro_local, headers=VENDEDOR)
+    r = cliente.get("/api/balance/diario?fecha=" + hoy, headers=DESDE_REPORTES)
+    b = r.get_json()
+    comprobar("Sin localId: consolida los 2 locales (total 138000, localId null)",
+              r.status_code == 200 and b["localId"] is None
+              and b["disponible"] == {"efectivo": 75000, "tarjeta": 20000, "qr": 43000, "total": 138000}, r)
+    r = cliente.get("/api/balance/diario?localId=1&fecha=" + hoy, headers=VENDEDOR)
+    comprobar("Con localId=1 sigue mostrando solo ese local (118000)",
+              r.get_json()["disponible"]["total"] == 118000, r)
+
     print()
     if fallos:
         print("{} comprobaciones fallaron".format(len(fallos)))

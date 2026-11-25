@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: JAK Inventory — Microservicio de Reportes y Dashboard
-  version: 1.0.0
+  version: 1.1.0
   description: |
     Presenta de forma visual la información de los demás servicios (RF11, RF14,
     RF23, RF24, RF25). No tiene datos propios del negocio: los consulta y los guarda
@@ -20,13 +20,18 @@ info:
 
     Nadie llama a este servicio internamente; solo los usuarios vía Gateway.
 
+    **Identidad:** este servicio no recibe ni valida el token. El API Gateway lo valida y envía
+    `X-Empresa-Id`, `X-Usuario-Id` y `X-Rol`. Sin los headers responde `401` (`FALTAN_HEADERS`);
+    si el rol no tiene permiso para el reporte, o la llamada viene de otro servicio, `403`
+    (`SIN_PERMISO`).
+
     **Roles:** `administrador` todo; `encargado_bodega` reportes de inventario y
     reposición; `vendedor` ventas y balance.
 servers:
 - url: http://localhost:8080
   description: A través del API Gateway
 - url: http://reportes-service:8000
-  description: Dirección interna en la red de Docker (ajustar puerto)
+  description: Dirección interna en la red de Docker
 tags:
 - name: Dashboard
   description: Panel personalizado por empresa (RF28)
@@ -43,7 +48,9 @@ paths:
       description: Consulta a Configuración qué métricas mostrar y arma solo esas.
       operationId: dashboard
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       parameters:
       - $ref: '#/components/parameters/LocalIdFiltro'
       - $ref: '#/components/parameters/Refrescar'
@@ -76,7 +83,9 @@ paths:
       description: 'Roles: `administrador`, `vendedor`.'
       operationId: reporteVentasPorCanal
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       parameters:
       - $ref: '#/components/parameters/LocalIdFiltro'
       - $ref: '#/components/parameters/FechaDesde'
@@ -122,7 +131,9 @@ paths:
       description: 'Roles: `administrador`, `encargado_bodega`.'
       operationId: reporteInventario
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       parameters:
       - $ref: '#/components/parameters/LocalIdFiltro'
       - $ref: '#/components/parameters/FechaDesde'
@@ -162,7 +173,9 @@ paths:
       description: 'Roles: `administrador`, `encargado_bodega`.'
       operationId: reporteAgotados
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       parameters:
       - $ref: '#/components/parameters/Refrescar'
       responses:
@@ -195,7 +208,9 @@ paths:
       description: 'Roles: `administrador`, `encargado_bodega`.'
       operationId: reporteReposiciones
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       parameters:
       - $ref: '#/components/parameters/Refrescar'
       responses:
@@ -233,7 +248,9 @@ paths:
       description: 'Roles: `administrador`, `vendedor`.'
       operationId: reporteBalance
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       parameters:
       - $ref: '#/components/parameters/LocalIdFiltro'
       - $ref: '#/components/parameters/FechaDesde'
@@ -267,7 +284,9 @@ paths:
       description: 'Rol: `administrador`. Une inventario, ventas y balance del local.'
       operationId: reporteLocal
       security:
-      - bearerAuth: []
+      - empresa: []
+        usuario: []
+        rol: []
       parameters:
       - name: localId
         in: path
@@ -338,21 +357,6 @@ paths:
                 estado: ok
 components:
   parameters:
-    Pagina:
-      name: pagina
-      in: query
-      schema:
-        type: integer
-        minimum: 1
-        default: 1
-    PorPagina:
-      name: porPagina
-      in: query
-      schema:
-        type: integer
-        minimum: 1
-        maximum: 100
-        default: 20
     FechaDesde:
       name: fechaDesde
       in: query
@@ -395,18 +399,6 @@ components:
         detalle:
           type: string
           example: Falta un campo obligatorio
-    Paginacion:
-      type: object
-      properties:
-        pagina:
-          type: integer
-          example: 1
-        porPagina:
-          type: integer
-          example: 20
-        total:
-          type: integer
-          example: 57
     Salud:
       type: object
       properties:
@@ -458,21 +450,26 @@ components:
         total:
           type: number
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: Token emitido por el API Gateway. Contiene `empresaId`, `usuarioId` y `rol`.
+    empresa:
+      type: apiKey
+      in: header
+      name: X-Empresa-Id
+      description: Empresa de la petición. La pone el Gateway (a partir del token) o el servicio que hace la llamada interna.
+    usuario:
+      type: apiKey
+      in: header
+      name: X-Usuario-Id
+      description: Usuario que hace la petición. Lo pone el Gateway a partir del token.
+    rol:
+      type: apiKey
+      in: header
+      name: X-Rol
+      description: Rol del usuario (administrador, vendedor, encargado_bodega o tienda_web). Lo pone el Gateway a partir del token.
     servicioOrigen:
       type: apiKey
       in: header
       name: X-Servicio-Origen
-      description: Nombre del microservicio que llama. Solo red interna de Docker (el Gateway no enruta estas llamadas).
-    empresaInterna:
-      type: apiKey
-      in: header
-      name: X-Empresa-Id
-      description: Empresa en nombre de la cual se hace la llamada interna.
+      description: Nombre del microservicio que llama. Solo red interna de Docker (el Gateway borra este header de las peticiones externas).
   responses:
     DatosInvalidos:
       description: Los datos enviados no son válidos
@@ -481,31 +478,19 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     NoAutenticado:
-      description: Falta el token (o los headers internos) o no es válido
+      description: Faltan las cabeceras de identidad que pone el Gateway (FALTAN_HEADERS)
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
     SinPermiso:
-      description: El rol (o el servicio de origen) no permite esta operación
+      description: El rol (o el servicio de origen) no permite esta operación (SIN_PERMISO)
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
     NoEncontrado:
       description: El recurso no existe o pertenece a otra empresa
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    Conflicto:
-      description: La operación choca con el estado actual de los datos
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    ServicioNoDisponible:
-      description: Un servicio del que depende no respondió después de 3 intentos (circuit breaker)
       content:
         application/json:
           schema:

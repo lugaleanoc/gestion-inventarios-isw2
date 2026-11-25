@@ -23,7 +23,7 @@ Pegar `docker-compose.snippet.yml` dentro de `services:` y agregar el volumen `g
 
 ## Variables de entorno
 
-DB_HOST, DB_PORT, DB_NAME (gateway_db), DB_USER, DB_PASSWORD, JWT_SECRET, JWT_EXPIRA_MINUTOS (480), JWT_TIENDA_EXPIRA_MINUTOS (60), CODIGO_RECUPERACION_MINUTOS (15), EXPONER_CODIGO_RECUPERACION (false), TIMEOUT_CONEXION (3), TIMEOUT_LECTURA (15).
+DB_HOST, DB_PORT, DB_NAME (gateway_db), DB_USER, DB_PASSWORD, JWT_SECRET, JWT_EXPIRA_MINUTOS (480), JWT_TIENDA_EXPIRA_MINUTOS (60), CODIGO_RECUPERACION_MINUTOS (15), EXPONER_CODIGO_RECUPERACION (false), TIMEOUT_CONEXION (3), TIMEOUT_LECTURA (15). Resiliencia: REINTENTOS (3), REINTENTO_ESPERA (0.2 s, se duplica en cada reintento), CIRCUITO_FALLAS (3), CIRCUITO_SEGUNDOS (5): tras 3 fallas seguidas el circuito de ese servicio se abre 5 s y responde 503 SERVICIO_NO_DISPONIBLE sin intentar. Un POST solo se reintenta si la conexión nunca se pudo abrir.
 Direcciones de los servicios: CONFIGURACION_URL, INVENTARIO_URL, PROVEEDORES_URL, VENTAS_URL, REPOSICION_URL, BALANCE_URL, REPORTES_URL. Por defecto son `http://<nombre>-service:8000`; el de Balance Diario es `http://balance-service:8000`.
 
 ## Decisiones donde el contrato no decía todo

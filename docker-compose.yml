@@ -163,9 +163,11 @@ services:
       BALANCE_URL: http://balance-service:8000
       TIMEOUT_SEGUNDOS: 3
       MAX_INTENTOS: 3
-      # "true": simula a Inventario (bodega 1 y precio fijo).
-      # "false": llama a inventario-service.
-      USAR_MOCK_INVENTARIO: "true"
+      # "false": llama a inventario-service, que descuenta el stock (RF17)
+      # y dispara la reposicion automatica (RF18).
+      # "true": simula a Inventario (bodega 1 y precio fijo); solo lo usa
+      # docker-compose.pruebas.yml para medir Ventas por separado.
+      USAR_MOCK_INVENTARIO: "false"
       MOCK_PRECIO: 10000
       MOCK_STOCK_DISPONIBLE: 100
     depends_on:
@@ -199,69 +201,73 @@ services:
       - jak-red
 
   # API Gateway: unico servicio que publica un puerto (8080).
-  # gateway:
-  #   build: ./services/gateway
-  #   container_name: gateway-service
-  #   environment:
-  #     NOMBRE_SERVICIO: gateway
-  #     DB_HOST: mysql
-  #     DB_PUERTO: 3306
-  #     DB_NOMBRE: gateway_db
-  #     DB_USUARIO: gateway
-  #     DB_CLAVE: gateway
-  #     CONFIGURACION_URL: http://configuracion-service:8000
-  #     VENTAS_URL: http://ventas-service:8000
-  #     BALANCE_URL: http://balance-service:8000
-  #     INVENTARIO_URL: http://inventario-service:8000
-  #     REPOSICION_URL: http://reposicion-service:8000
-  #     PROVEEDORES_URL: http://proveedores-service:8000
-  #     REPORTES_URL: http://reportes-service:8000
-  #   ports:
-  #     - "8080:8000"
-  #   depends_on:
-  #     mysql:
-  #       condition: service_healthy
-  #   networks:
-  #     - default
-  #     - jak-red
+  gateway:
+    build: ./services/gateway
+    container_name: gateway-service
+    environment:
+      NOMBRE_SERVICIO: gateway
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: gateway_db
+      DB_USER: gateway
+      DB_PASSWORD: gateway
+      JWT_SECRET: cambiar-este-secreto-en-produccion
+      CONFIGURACION_URL: http://configuracion-service:8000
+      VENTAS_URL: http://ventas-service:8000
+      BALANCE_URL: http://balance-service:8000
+      INVENTARIO_URL: http://inventario-service:8000
+      REPOSICION_URL: http://reposicion-service:8000
+      PROVEEDORES_URL: http://proveedores-service:8000
+      REPORTES_URL: http://reportes-service:8000
+    ports:
+      - "8080:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - default
+      - jak-red
 
   # Proveedores
-  # proveedores:
-  #   build: ./services/proveedores
-  #   container_name: proveedores-service
-  #   environment:
-  #     NOMBRE_SERVICIO: proveedores
-  #     DB_HOST: mysql
-  #     DB_NOMBRE: proveedores_db
-  #     DB_USUARIO: proveedores
-  #     DB_CLAVE: proveedores
-  #   depends_on:
-  #     mysql:
-  #       condition: service_healthy
-  #   networks:
-  #     - default
-  #     - jak-red
+  proveedores:
+    build: ./services/proveedores
+    container_name: proveedores-service
+    environment:
+      NOMBRE_SERVICIO: proveedores
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: proveedores_db
+      DB_USER: proveedores
+      DB_PASSWORD: proveedores
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - default
+      - jak-red
 
   # Reportes
-  # reportes:
-  #   build: ./services/reportes
-  #   container_name: reportes-service
-  #   environment:
-  #     NOMBRE_SERVICIO: reportes
-  #     DB_HOST: mysql
-  #     DB_NOMBRE: reportes_db
-  #     DB_USUARIO: reportes
-  #     DB_CLAVE: reportes
-  #     VENTAS_URL: http://ventas-service:8000
-  #     BALANCE_URL: http://balance-service:8000
-  #     INVENTARIO_URL: http://inventario-service:8000
-  #     CONFIGURACION_URL: http://configuracion-service:8000
-  #   depends_on:
-  #     mysql:
-  #       condition: service_healthy
-  #   networks:
-  #     - default
-  #     - jak-red
+  reportes:
+    build: ./services/reportes
+    container_name: reportes-service
+    environment:
+      NOMBRE_SERVICIO: reportes
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: reportes_db
+      DB_USER: reportes
+      DB_PASSWORD: reportes
+      CONFIGURACION_URL: http://configuracion-service:8000
+      VENTAS_URL: http://ventas-service:8000
+      BALANCE_URL: http://balance-service:8000
+      INVENTARIO_URL: http://inventario-service:8000
+      REPOSICION_URL: http://reposicion-service:8000
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - default
+      - jak-red
 
 networks:
   jak-red:

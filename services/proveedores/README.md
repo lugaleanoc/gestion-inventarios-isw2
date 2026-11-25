@@ -35,7 +35,7 @@ DB_HOST (proveedores-db), DB_PORT (3306), DB_NAME (proveedores_db), DB_USER (pro
 - productoId y proveedorId son enteros.
 - PUT reemplaza el proveedor completo: contacto y condiciones omitidos quedan en null.
 - DELETE es baja lógica (activo=false). Es idempotente.
-- Un producto tiene un solo proveedor principal por empresa. Si no se envía principal, el primero que se asocia queda como principal; si se envía principal=true, los demás dejan de serlo.
+- Un producto tiene un solo proveedor principal por empresa. Si no se envía principal, queda en false (como dice el contrato); si se envía principal=true, los demás dejan de serlo.
 - GET /por-producto/{productoId} devuelve solo proveedores y asociaciones activos, principal primero, con los campos del proveedor más principal y precioCompra. Si no hay ninguno, 404 PRODUCTO_SIN_PROVEEDORES.
 - Asociar a un proveedor dado de baja devuelve 409 PROVEEDOR_INACTIVO. Volver a asociar un producto dado de baja lo reactiva.
 - pagina empieza en 1, porPagina por defecto 20 y máximo 100 (si piden más, se usa 100).

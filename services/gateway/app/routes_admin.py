@@ -66,9 +66,8 @@ def listar_usuarios():
         condiciones.append("rol = %s")
         params.append(rol_valido(rol))
     activo = booleano_consulta("activo")
-    if activo is not None:
-        condiciones.append("activo = %s")
-        params.append(1 if activo else 0)
+    condiciones.append("activo = %s")
+    params.append(0 if activo is False else 1)
     where = " AND ".join(condiciones)
     db = get_db()
     total = db.fila(f"SELECT COUNT(*) AS total FROM usuarios WHERE {where}", params)["total"]
@@ -83,7 +82,6 @@ def listar_usuarios():
                 "pagina": pagina,
                 "porPagina": por_pagina,
                 "total": total,
-                "totalPaginas": -(-total // por_pagina),
             },
         }
     )

@@ -72,78 +72,69 @@ def lista_balances(datos):
     return []
 
 
+ESTADOS_REPOSICION = ("pendiente", "aprobada", "en_orden", "recibida", "rechazada")
+
+
 def ventas(f, p):
     d = f.datos("ventas", "/api/ventas/resumen", p.consulta())
-    base = {"localId": p.local_id, "fechaDesde": p.desde.isoformat(), "fechaHasta": p.hasta.isoformat()}
-    if not isinstance(d, dict):
-        return {**base, "totalVentas": None, "cantidadVentas": None, "porCanal": None, "porMedioPago": None}
+    d = d if isinstance(d, dict) else {}
     return {
-        **base,
-        "totalVentas": d.get("totalVentas"),
-        "cantidadVentas": d.get("cantidadVentas"),
-        "porCanal": d.get("porCanal"),
-        "porMedioPago": d.get("porMedioPago"),
+        "porCanal": d.get("porCanal") or {"tienda_fisica": 0, "tienda_web": 0},
+        "porMedioPago": d.get("porMedioPago") or {"efectivo": 0, "tarjeta": 0, "qr": 0},
+        "totalVentas": d.get("totalVentas") or 0,
+        "cantidadVentas": d.get("cantidadVentas") or 0,
     }
 
 
 def indicadores(f, p):
     d = f.datos("inventario", "/api/inventario/indicadores", p.consulta())
-    return d if isinstance(d, dict) else None
+    return d if isinstance(d, dict) else {}
 
 
 def inventario(f, p):
-    base = {"localId": p.local_id, "fechaDesde": p.desde.isoformat(), "fechaHasta": p.hasta.isoformat()}
     d = indicadores(f, p)
-    if d is None:
-        return {
-            **base,
-            "valorTotal": None,
-            "cantidadProductos": None,
-            "productosAgotados": None,
-            "productosBajoMinimo": None,
-            "mayorRotacion": [],
-            "menorRotacion": [],
-        }
     return {
-        **base,
-        "valorTotal": d.get("valorTotal"),
-        "cantidadProductos": d.get("cantidadProductos"),
-        "productosAgotados": conteo(d.get("productosAgotados")),
-        "productosBajoMinimo": conteo(d.get("productosBajoMinimo")),
-        "mayorRotacion": lista_productos(d.get("mayorRotacion"), CLAVES_VALOR_ROTACION),
-        "menorRotacion": lista_productos(d.get("menorRotacion"), CLAVES_VALOR_ROTACION),
+        "valorTotal": d.get("valorTotal") or 0,
+        "cantidadProductos": d.get("cantidadProductos") or 0,
+        "mayorRotacion": lista_productos(d.get("mayorRotacion"), CLAVES_VALOR_ROTACION, 0),
+        "menorRotacion": lista_productos(d.get("menorRotacion"), CLAVES_VALOR_ROTACION, 0),
     }
 
 
 def productos_agotados(f, p):
     d = indicadores(f, p)
-    if d is None:
-        return {"total": None, "productos": []}
-    agotados = d.get("productosAgotados")
     return {
-        "total": conteo(agotados),
-        "productos": lista_productos(agotados, CLAVES_VALOR_AGOTADO, por_defecto=0),
+        "agotados": lista_productos(d.get("productosAgotados"), CLAVES_VALOR_AGOTADO, 0),
+        "bajoMinimo": lista_productos(d.get("productosBajoMinimo"), CLAVES_VALOR_AGOTADO, 0),
     }
 
 
 def reposiciones(f):
     d = f.datos("reposicion", "/api/reposicion/resumen")
-    if d is None:
-        return {"porEstado": None, "total": None}
     estados = por_estado(d)
-    return {"porEstado": estados, "total": sum(estados.values())}
+    resultado = {estado: estados.get(estado, 0) for estado in ESTADOS_REPOSICION}
+    resultado.update({k: v for k, v in estados.items() if k not in resultado})
+    return {"porEstado": resultado}
+
+
+def totales_vacios():
+    return {"efectivo": 0, "tarjeta": 0, "qr": 0, "total": 0}
+
+
+def dia_de(balance_diario):
+    return str(balance_diario.get("fecha", "")) if isinstance(balance_diario, dict) else ""
 
 
 def balance(f, p):
-    base = {"localId": p.local_id, "fechaDesde": p.desde.isoformat(), "fechaHasta": p.hasta.isoformat()}
     d = f.datos("balance", "/api/balance/reporte", p.consulta())
-    if d is None:
-        return {**base, "balances": None, "disponible": None}
-    balances = lista_balances(d)
+    balances = [b for b in lista_balances(d) if isinstance(b, dict)]
+    ultimo_por_local = {}
+    for b in sorted(balances, key=dia_de):
+        ultimo_por_local[b.get("localId")] = b
     return {
-        **base,
-        "balances": balances,
-        "disponible": sumar_totales([b.get("disponible") for b in balances if isinstance(b, dict)]),
+        "ingresos": sumar_totales([b.get("ingresos") for b in balances]),
+        "egresos": sumar_totales([b.get("egresos") for b in balances]),
+        "disponible": sumar_totales([b.get("disponible") for b in ultimo_por_local.values()]),
     }
 
 
@@ -152,27 +143,25 @@ def balance_del_dia(f, p):
     if p.local_id is not None:
         params["localId"] = p.local_id
     d = f.datos("balance", "/api/balance/diario", params)
-    return d if isinstance(d, dict) else None
+    return d if isinstance(d, dict) else {}
 
 
 def metrica(nombre, f, p):
     if nombre == "ventas_por_canal":
-        return ventas(f, p)
+        return ventas(f, p)["porCanal"]
     if nombre == "productos_baja_rotacion":
-        d = indicadores(f, p)
-        return {"productos": lista_productos(d.get("menorRotacion"), CLAVES_VALOR_ROTACION) if d else []}
+        return inventario(f, p)["menorRotacion"]
     if nombre == "productos_agotados":
-        return productos_agotados(f, p)
+        return len(productos_agotados(f, p)["agotados"])
     if nombre == "estado_reposiciones":
-        return reposiciones(f)
+        return reposiciones(f)["porEstado"]
     if nombre == "balance_diario":
         return balance_del_dia(f, p)
     if nombre == "ingresos_egresos":
         d = balance_del_dia(f, p)
-        return None if d is None else {"ingresos": d.get("ingresos"), "egresos": d.get("egresos")}
+        return {"ingresos": d.get("ingresos") or totales_vacios(), "egresos": d.get("egresos") or totales_vacios()}
     if nombre == "valor_inventario":
-        d = indicadores(f, p)
-        return None if d is None else {"valorTotal": d.get("valorTotal")}
+        return inventario(f, p)["valorTotal"]
     return None
 
 
@@ -196,14 +185,22 @@ def local_por_defecto(preferencias):
 
 
 def reporte_de_local(f, p, local_id):
-    estado, local = f.consultar("configuracion", f"/api/configuracion/locales/{local_id}")
+    estado, _ = f.consultar("configuracion", f"/api/configuracion/locales/{local_id}")
     if estado == NO_ENCONTRADO:
         return None
+    v = ventas(f, p)
+    i = indicadores(f, p)
+    b = balance(f, p)
     return {
-        "local": local,
-        "fechaDesde": p.desde.isoformat(),
-        "fechaHasta": p.hasta.isoformat(),
-        "ventas": ventas(f, p),
-        "inventario": inventario(f, p),
-        "balance": balance(f, p),
+        "localId": local_id,
+        "inventario": {
+            "valorTotal": i.get("valorTotal") or 0,
+            "productosAgotados": len(lista_productos(i.get("productosAgotados"), CLAVES_VALOR_AGOTADO, 0)),
+        },
+        "ventas": {"totalVentas": v["totalVentas"], "cantidadVentas": v["cantidadVentas"]},
+        "balance": {
+            "ingresos": b["ingresos"]["total"],
+            "egresos": b["egresos"]["total"],
+            "disponible": b["disponible"]["total"],
+        },
     }

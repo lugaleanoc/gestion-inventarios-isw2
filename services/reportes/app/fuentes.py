@@ -1,7 +1,8 @@
 import logging
 
-import requests
 from flask import current_app
+
+from .resiliencia import ServicioNoDisponible
 
 registro = logging.getLogger("reportes.fuentes")
 
@@ -32,13 +33,17 @@ class Fuentes:
         cfg = current_app.config
         sesion = current_app.extensions["sesion_http"]
         try:
-            respuesta = sesion.get(
-                cfg["SERVICIOS"][servicio] + ruta,
-                params=params,
-                headers={"X-Servicio-Origen": "reportes", "X-Empresa-Id": str(self.empresa_id)},
-                timeout=(cfg["TIMEOUT_CONEXION"], cfg["TIMEOUT_LECTURA"]),
+            respuesta = current_app.extensions["resiliencia"].llamar(
+                servicio,
+                lambda: sesion.get(
+                    cfg["SERVICIOS"][servicio] + ruta,
+                    params=params,
+                    headers={"X-Servicio-Origen": "reportes", "X-Empresa-Id": str(self.empresa_id)},
+                    timeout=(cfg["TIMEOUT_CONEXION"], cfg["TIMEOUT_LECTURA"]),
+                ),
+                idempotente=True,
             )
-        except requests.RequestException as exc:
+        except ServicioNoDisponible as exc:
             registro.warning("%s no responde: %s", servicio, exc)
             self._marcar(servicio)
             return CAIDO, None

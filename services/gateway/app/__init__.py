@@ -7,6 +7,7 @@ from .config import ajustes
 from .db import DBNoDisponible, cerrar_db
 from .errores import ApiError, respuesta_error
 from .proxy import bp as proxy_bp
+from .resiliencia import Resiliencia
 from .routes_admin import bp as admin_bp
 from .routes_auth import bp as auth_bp
 from .routes_empresas import bp as empresas_bp
@@ -35,13 +36,19 @@ def create_app(config=None):
     app.config.update(ajustes())
     app.config.update(config or {})
     app.extensions["sesion_http"] = crear_sesion_http()
+    app.extensions["resiliencia"] = Resiliencia(
+        intentos=app.config["REINTENTOS"],
+        espera=app.config["REINTENTO_ESPERA"],
+        fallas_para_abrir=app.config["CIRCUITO_FALLAS"],
+        segundos_abierto=app.config["CIRCUITO_SEGUNDOS"],
+    )
     app.teardown_appcontext(cerrar_db)
     for plano in (auth_bp, admin_bp, empresas_bp, proxy_bp):
         app.register_blueprint(plano)
 
     @app.get("/health")
     def health():
-        return jsonify({"estado": "ok", "servicio": "gateway-service"})
+        return jsonify({"estado": "ok", "servicio": "api-gateway"})
 
     @app.errorhandler(ApiError)
     def manejar_api_error(exc):

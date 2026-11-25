@@ -6,6 +6,7 @@ from werkzeug.exceptions import HTTPException
 from .config import ajustes
 from .db import DBNoDisponible, cerrar_db
 from .errores import ApiError, respuesta_error
+from .resiliencia import Resiliencia
 from .routes import bp as reportes_bp
 
 NOMBRES_HTTP = {
@@ -32,12 +33,18 @@ def create_app(config=None):
     app.config.update(ajustes())
     app.config.update(config or {})
     app.extensions["sesion_http"] = crear_sesion_http()
+    app.extensions["resiliencia"] = Resiliencia(
+        intentos=app.config["REINTENTOS"],
+        espera=app.config["REINTENTO_ESPERA"],
+        fallas_para_abrir=app.config["CIRCUITO_FALLAS"],
+        segundos_abierto=app.config["CIRCUITO_SEGUNDOS"],
+    )
     app.teardown_appcontext(cerrar_db)
     app.register_blueprint(reportes_bp)
 
     @app.get("/health")
     def health():
-        return jsonify({"estado": "ok", "servicio": "reportes-service"})
+        return jsonify({"estado": "ok", "servicio": "reportes"})
 
     @app.errorhandler(ApiError)
     def manejar_api_error(exc):

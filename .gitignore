@@ -12,3 +12,7 @@ venv/
 Thumbs.db
 .vscode/
 .idea/
+
+.postman/
+/postman/
+docs/postman/*/

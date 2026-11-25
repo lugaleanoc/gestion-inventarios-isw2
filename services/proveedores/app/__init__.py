@@ -27,7 +27,7 @@ def create_app(config=None):
 
     @app.get("/health")
     def health():
-        return jsonify({"estado": "ok", "servicio": "proveedores-service"})
+        return jsonify({"estado": "ok", "servicio": "proveedores"})
 
     @app.errorhandler(ApiError)
     def manejar_api_error(exc):

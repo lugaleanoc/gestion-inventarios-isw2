@@ -1,10 +1,10 @@
 import posixpath
 
-import requests
 from flask import Blueprint, Response, current_app, g, request
 
 from .config import RUTAS_INTERNAS
 from .errores import ApiError
+from .resiliencia import ServicioNoDisponible
 from .sesion import autenticar
 
 bp = Blueprint("proxy", __name__, url_prefix="/api")
@@ -40,16 +40,24 @@ def reenviar(servicio, resto=""):
     if consulta:
         url += "?" + consulta
     sesion = current_app.extensions["sesion_http"]
-    try:
-        respuesta = sesion.request(
-            request.method,
+    cuerpo = request.get_data()
+    metodo = request.method
+
+    def enviar():
+        return sesion.request(
+            metodo,
             url,
-            data=request.get_data(),
+            data=cuerpo,
             headers=headers,
             timeout=(cfg["TIMEOUT_CONEXION"], cfg["TIMEOUT_LECTURA"]),
             allow_redirects=True,
         )
-    except requests.RequestException:
+
+    try:
+        respuesta = current_app.extensions["resiliencia"].llamar(
+            servicio, enviar, idempotente=metodo in ("GET", "PUT", "DELETE")
+        )
+    except ServicioNoDisponible:
         raise ApiError(503, "SERVICIO_NO_DISPONIBLE", f"El servicio {servicio} no responde")
     return Response(
         respuesta.content,

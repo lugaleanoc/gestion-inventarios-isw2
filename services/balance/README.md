@@ -17,7 +17,7 @@ Swagger: `http://localhost:8005/docs/` con el compose de pruebas.
 | POST | `/api/balance/movimientos/ventas` | **solo** `X-Servicio-Origen: ventas` |
 | GET | `/api/balance/movimientos/{id}` | administrador, vendedor · interno: reportes |
 | POST | `/api/balance/movimientos/{id}/ajustes` | administrador |
-| GET | `/api/balance/diario?localId=&fecha=` | administrador, vendedor · interno: reportes |
+| GET | `/api/balance/diario?fecha=[&localId=]` (sin localId: todos los locales) | administrador, vendedor · interno: reportes |
 | GET | `/api/balance/reporte?fechaDesde=&fechaHasta=` | administrador · interno: reportes |
 
 ## Reglas importantes
